@@ -1,0 +1,12 @@
+{
+  "name": "Panorama Café — Personal",
+  "short_name": "Panorama Personal",
+  "description": "Control de personal, asistencia y nómina de Panorama Café",
+  "start_url": "./",
+  "scope": "./",
+  "display": "standalone",
+  "background_color": "#f4f1ec",
+  "theme_color": "#2d2926",
+  "lang": "es-MX",
+  "orientation": "any"
+}

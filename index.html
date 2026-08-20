@@ -1,0 +1,854 @@
+<!doctype html>
+<html lang="es">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<meta name="theme-color" content="#17352b">
+<title>Panorama Café · Personal</title>
+<style>
+:root{--bg:#f3f0e8;--card:#fff;--ink:#24322d;--muted:#718078;--brand:#17352b;--brand2:#315b49;--line:#e2ded5;--ok:#2e7d57;--bad:#b94d49;--warn:#b57920}
+*{box-sizing:border-box}body{margin:0;background:var(--bg);color:var(--ink);font-family:system-ui,-apple-system,Segoe UI,sans-serif}
+.app{max-width:1100px;margin:auto;padding:14px}
+.header{background:linear-gradient(135deg,var(--brand),var(--brand2));color:#fff;padding:20px;border-radius:22px;display:flex;justify-content:space-between;align-items:center;gap:10px;flex-wrap:wrap}
+.header h1{margin:0;font-size:20px}.header .muted-light{color:#ffffffb0;font-size:12px}
+.tabs{display:flex;gap:8px;margin:14px 0}
+.tab{flex:1;text-align:center;padding:12px;border-radius:14px;background:#e9e6de;font-weight:900;cursor:pointer;border:0}
+.tab.active{background:var(--brand);color:#fff}
+button{border:0;border-radius:11px;padding:10px 13px;font-weight:800;cursor:pointer;background:#e9e6de;color:var(--ink)}
+button.primary{background:var(--brand);color:white}button.danger{background:#f6e1df;color:var(--bad)}button.ok{background:#e2f0e8;color:#236b4a}
+.view.hidden,.modal.hidden{display:none}
+.grid{display:grid;grid-template-columns:1.3fr .7fr;gap:14px}
+.card{background:var(--card);border:1px solid var(--line);border-radius:18px;padding:17px;box-shadow:0 5px 18px #00000008;margin-top:14px}
+label{display:block;font-size:12px;font-weight:800;color:var(--muted);margin:8px 0 5px}
+input,select{width:100%;padding:10px;border:1px solid var(--line);border-radius:10px;background:white;font:inherit;color:var(--ink)}
+.meta{display:grid;grid-template-columns:1fr 1fr;gap:10px}
+.actions{display:flex;gap:8px;flex-wrap:wrap;margin-top:13px}
+.item{padding:11px 0;border-bottom:1px solid var(--line)}.item:last-child{border:0}
+.empty{text-align:center;padding:18px;color:var(--muted)}
+.notice{padding:11px;border-radius:11px;background:#f5f1e8;font-size:13px;margin-top:10px}
+.modal{position:fixed;inset:0;background:#0008;display:flex;align-items:center;justify-content:center;padding:16px;z-index:50}
+.modalbox{background:white;width:min(420px,100%);max-height:90vh;overflow:auto;border-radius:20px;padding:20px}
+.modalhead{display:flex;justify-content:space-between;gap:10px;align-items:flex-start}
+.close{background:transparent;font-size:18px}
+.empgrid{display:grid;grid-template-columns:repeat(auto-fill,minmax(150px,1fr));gap:12px;margin-top:6px}
+.empbtn{background:#fff;border:1px solid var(--line);border-radius:16px;padding:16px 10px;text-align:center;cursor:pointer}
+.empbtn .dot{display:inline-block;width:9px;height:9px;border-radius:50%;background:var(--muted);margin-right:6px}
+.empbtn.working .dot{background:var(--ok)}
+.empbtn .ename{font-weight:900;margin-top:6px}
+.empbtn .estatus{font-size:11px;color:var(--muted);margin-top:2px}
+.pindots{display:flex;gap:14px;justify-content:center;margin:18px 0}
+.pindots .dot2{width:16px;height:16px;border-radius:50%;border:2px solid var(--brand);background:transparent}
+.pindots .dot2.filled{background:var(--brand)}
+.keypad{display:grid;grid-template-columns:repeat(3,1fr);gap:10px}
+.keypad .key{padding:16px;font-size:18px;background:#f0ede5}
+.toast{position:fixed;left:50%;bottom:24px;transform:translateX(-50%);background:var(--brand);color:#fff;padding:13px 18px;border-radius:12px;font-weight:700;z-index:70;box-shadow:0 8px 25px #0004;max-width:90%;text-align:center}
+table{width:100%;border-collapse:collapse;margin-top:10px;font-size:14px}
+th,td{text-align:left;padding:8px 6px;border-bottom:1px solid var(--line)}
+th{color:var(--muted);font-size:11px;text-transform:uppercase}
+tfoot td{font-weight:900}
+.weeknav{display:flex;align-items:center;gap:10px;justify-content:space-between;margin-top:6px}
+.weeknav .wk{font-weight:800}
+.tag2{display:inline-block;padding:2px 8px;border-radius:99px;background:#ece9e1;font-size:11px;font-weight:800}
+.stats{display:grid;grid-template-columns:repeat(2,1fr);gap:10px}
+.stat{background:#f7f5ef;padding:13px;border-radius:13px}
+.num{font-size:25px;font-weight:900}
+@media(max-width:800px){.grid{grid-template-columns:1fr}.meta{grid-template-columns:1fr}}
+.notice.warning{background:#fff3cd;border-color:#f0d98a;color:#5f4b00}\n.clockcard{text-align:center;max-width:520px;margin:0 auto}.clockicon{font-size:46px;margin-bottom:6px}.pin-input{display:block;width:100%;max-width:280px;margin:18px auto 10px;text-align:center;font-size:28px;letter-spacing:.25em;padding:12px}.big{min-width:220px;padding:12px 18px}.notice.warning{background:#fff3cd;border-color:#f0d98a;color:#5f4b00}
+
+.working-list{display:flex;flex-wrap:wrap;gap:8px}
+.working-person{padding:9px 12px;border:1px solid var(--line);border-radius:10px;background:#f7faf7}
+.working-person .dot{display:inline-block;width:9px;height:9px;border-radius:50%;background:#35a853;margin-right:6px}
+.working-empty{padding:8px 0;color:#777}
+
+
+.clock-home{text-align:center;max-width:520px;margin:0 auto}
+.clock-home .clockicon{font-size:46px;margin-bottom:4px}
+.welcome-message{font-size:18px;font-weight:800}
+.pin-display{height:48px;max-width:300px;margin:16px auto 12px;border:2px solid var(--line);border-radius:12px;display:flex;align-items:center;justify-content:center;letter-spacing:.35em;font-size:24px;font-weight:900;background:#fff}
+.pinpad{display:grid;grid-template-columns:repeat(3,1fr);gap:9px;max-width:320px;margin:0 auto}
+.pinpad button{min-height:58px;border:1px solid var(--line);border-radius:12px;background:#fff;font-size:24px;font-weight:900;cursor:pointer;touch-action:manipulation}
+.pinpad button:active{transform:scale(.97)}
+.pinpad .pin-action{font-size:18px}
+.clock-message{min-height:42px;margin-top:12px}
+
+
+.admin-drawer{margin-top:10px;border-top:1px solid var(--line);padding-top:10px}
+.admin-drawer summary{cursor:pointer;font-weight:800;list-style:none}
+.admin-drawer summary::-webkit-details-marker{display:none}
+.admin-drawer summary:before{content:"⚙️ ";}.admin-drawer summary:after{content:" ▾";float:right}
+
+
+</style>
+  <link rel="manifest" href="manifest.json">
+  <meta name="theme-color" content="#2d2926">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+  <meta name="apple-mobile-web-app-title" content="Panorama Personal">
+<!-- PANORAMA PERSONAL · V1.8.1 PWA -->
+</head>
+<body><div class="app">
+<header class="header">
+  <div><h1>👥 Panorama Café · Personal</h1><div class="muted-light">Reloj checador, asistencia y nómina</div></div>
+</header>
+
+<div class="tabs">
+  <button class="tab active" id="tabReloj" onclick="showView('reloj')">🕒 Reloj</button>
+  <button class="tab" id="tabAdmin" onclick="openAdmin()">⚙️ Administración</button>
+</div>
+
+<section id="reloj" class="view">
+  <div class="card clock-home">
+    <div class="clockicon">🕒</div>
+    <h2>¡Bienvenido a tu turno!</h2>
+    <div class="welcome-message">Que tengas un excelente día.</div>
+    <div class="muted" style="margin-top:8px">Introduce tu PIN para registrar tu entrada o salida.</div>
+
+    <div class="pin-display" id="pinDisplay" aria-label="PIN"></div>
+
+    <div class="pinpad" aria-label="Teclado numérico">
+      <button type="button" onclick="pinKey('7')">7</button>
+      <button type="button" onclick="pinKey('8')">8</button>
+      <button type="button" onclick="pinKey('9')">9</button>
+      <button type="button" onclick="pinKey('4')">4</button>
+      <button type="button" onclick="pinKey('5')">5</button>
+      <button type="button" onclick="pinKey('6')">6</button>
+      <button type="button" onclick="pinKey('1')">1</button>
+      <button type="button" onclick="pinKey('2')">2</button>
+      <button type="button" onclick="pinKey('3')">3</button>
+      <button type="button" class="pin-action" onclick="pinSubmit()">OK</button>
+      <button type="button" onclick="pinKey('0')">0</button>
+      <button type="button" class="pin-action" onclick="pinBackspace()">⌫</button>
+    </div>
+
+    <div id="clockMessage" class="muted clock-message"></div>
+  </div>
+
+  <div class="card" style="margin-top:14px">
+    <h3 style="margin:0 0 8px">🟢 Actualmente trabajando</h3>
+    <div id="workingNowList"></div>
+  </div>
+
+  <div class="notice" style="margin-top:14px;text-align:center;font-weight:900">
+    ⚠️ NO OLVIDES ABRIR Y CERRAR SESIÓN
+  </div>
+</section>
+
+<section id="admin" class="view hidden">
+  <div class="card">
+    <div style="display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:8px">
+      <h2 style="margin:0">📊 Resumen de nómina</h2>
+      <select id="dashPeriod" onchange="onDashPeriodChange()" style="width:auto"><option value="all">Todo el tiempo</option><option value="month">Este mes</option><option value="quarter">Últimos 3 meses</option><option value="year">Este año</option></select>
+    </div>
+    <div class="stats" style="margin-top:12px">
+      <div class="stat"><div class="num" id="dashTotal">$0.00</div><div class="muted">Total pagado</div></div>
+      <div class="stat"><div class="num" id="dashCount">0</div><div class="muted">Pagos registrados</div></div>
+    </div>
+    <div id="dashByEmp" style="margin-top:10px"></div>
+  </div>
+
+  <div class="card">
+    <div style="display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:8px">
+      <h2 style="margin:0">👥 Trabajadores</h2>
+      <button class="primary" onclick="openEmployeeForm()">+ Agregar trabajador</button>
+    </div>
+    <div id="employeeList" style="margin-top:8px"></div>
+  </div>
+
+  <div class="card">
+    <h2 style="margin-top:0">💵 Nómina semanal</h2>
+    <div id="payrollAlerts"></div>
+    <div class="weeknav">
+      <button onclick="changeWeek(-1)">← Semana anterior</button>
+      <div class="wk" id="weekLabel"></div>
+      <button onclick="changeWeek(1)">Semana siguiente →</button>
+    </div>
+    <table id="payrollTable"></table>
+    <div class="actions"><button onclick="exportWeekCSV()">📊 Exportar semana (CSV)</button><button class="primary" onclick="finalizeCurrentWeek()">✓ Revisar y finalizar semana</button></div>
+    <div class="notice">🟢 Hasta 10 h: normal. 🟡 Más de 10 h: sospechosa. 🔴 Más de 12 h o sin salida: revisión obligatoria. Las sesiones pendientes no se contabilizan hasta corregirlas.</div>
+  </div>
+
+  <div class="card">
+    <h2 style="margin-top:0">💳 Pagos</h2>
+    <div class="muted">Fecha hasta la que se le pagó a cada quien, y lo que tiene pendiente desde entonces.</div>
+    <div id="paymentsSummary" style="margin-top:8px"></div>
+    <h3 style="margin-bottom:2px">Historial de pagos</h3>
+    <label>Filtrar por trabajador</label><select id="paymentsEmpFilter" onchange="onPaymentsFilterChange()"></select>
+    <div id="paymentsHistory" style="margin-top:8px"></div>
+    <div class="actions"><button onclick="exportPaymentsCSV()">📊 Exportar historial de pagos (CSV)</button></div>
+  </div>
+
+  <div class="card">
+    <h2 style="margin-top:0">📋 Registros de la semana</h2>
+    <div class="actions"><button onclick="openSessionForm()">+ Agregar registro manual</button></div>
+    <div id="sessionList" style="margin-top:8px"></div>
+  </div>
+
+  <div class="card">
+    <h2 style="margin-top:0">⚙️ Ajustes</h2>
+    <div class="actions">
+      <button onclick="changeAdminPin()">🔑 Cambiar PIN de administrador</button>
+      <button onclick="exportBackupJSON()">💾 Exportar respaldo (JSON)</button>
+      <label style="margin:0"><input type="file" id="importFile" accept="application/json" style="display:none" onchange="importBackupJSON(event)"><button onclick="document.getElementById('importFile').click()" type="button">📥 Importar respaldo</button></label>
+      <button class="danger" onclick="resetAllData()">🧹 Borrar todos los datos</button>
+    </div>
+  </div>
+</section>
+
+<div id="modal" class="modal hidden"><div class="modalbox" id="modalBox"></div></div>
+<div id="toast"></div>
+<footer class="muted" style="text-align:center;padding:18px;font-size:12px">Panorama Café · Personal V1.6 · Datos guardados en este dispositivo</footer>
+</div>
+
+<script>
+const STORE="panorama_cafe_personal_v1";
+function pad(n){return String(n).padStart(2,"0")}
+function localDateKey(d){return d.getFullYear()+"-"+pad(d.getMonth()+1)+"-"+pad(d.getDate())}
+function todayKey(){return localDateKey(new Date())}
+function esc(s){return String(s??"").replace(/[&<>"']/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#039;"}[c]))}
+function fmtTime(iso){return new Date(iso).toLocaleTimeString("es-MX",{hour:"2-digit",minute:"2-digit"})}
+function fmtDateShort(d){return d.toLocaleDateString("es-MX",{day:"2-digit",month:"short"})}
+
+function blankDB(){return {employees:[],sessions:[],payments:[],approvals:{},adminPin:"0000"}}
+function load(){
+  try{
+    const saved=localStorage.getItem(STORE);
+    if(saved){
+      const data=JSON.parse(saved),base=blankDB();
+      return {...base,...data,employees:Array.isArray(data.employees)?data.employees:[],sessions:Array.isArray(data.sessions)?data.sessions:[],payments:Array.isArray(data.payments)?data.payments:[],approvals:(data.approvals&&typeof data.approvals==="object")?data.approvals:{},adminPin:data.adminPin||"0000"};
+    }
+  }catch(e){console.warn("No se pudo leer la base local",e)}
+  return blankDB();
+}
+let db=load();
+function save(){
+  try{localStorage.setItem(STORE,JSON.stringify(db));renderAll()}
+  catch(e){alert("No se pudo guardar la información en el dispositivo.");console.error(e)}
+}
+
+function showView(id){
+  document.querySelectorAll(".view").forEach(v=>v.classList.add("hidden"));
+  document.getElementById(id).classList.remove("hidden");
+  document.getElementById("tabReloj").classList.toggle("active",id==="reloj");
+  document.getElementById("tabAdmin").classList.toggle("active",id==="admin");
+}
+
+/* ---------- PIN pad ---------- */
+let pinBuffer="",pinCallback=null;
+function renderDots(){return Array.from({length:4}).map((_,i)=>`<span class="dot2 ${i<pinBuffer.length?"filled":""}"></span>`).join("")}
+function openPinPad(title,subtitle,onSubmit){
+  pinBuffer="";pinCallback=onSubmit;
+  openModal(`<div class="modalhead"><div><h2 style="margin:0">${esc(title)}</h2><div class="muted">${esc(subtitle)}</div></div><button class="close" onclick="closeModal()">✕</button></div>
+  <div class="pindots" id="pinDots">${renderDots()}</div>
+  <div class="keypad">${[1,2,3,4,5,6,7,8,9].map(n=>`<button class="key" onclick="pinPress('${n}')">${n}</button>`).join("")}<button class="key" onclick="pinClear()">⌫</button><button class="key" onclick="pinPress('0')">0</button><div></div></div>
+  <div id="pinError" style="min-height:18px;color:var(--bad);text-align:center;margin-top:8px;font-weight:700"></div>`);
+}
+function pinPress(d){
+  if(pinBuffer.length>=4)return;
+  pinBuffer+=d;
+  document.getElementById("pinDots").innerHTML=renderDots();
+  if(pinBuffer.length===4){
+    setTimeout(()=>{
+      const ok=pinCallback(pinBuffer);
+      if(!ok){
+        const err=document.getElementById("pinError");
+        if(err)err.textContent="PIN incorrecto";
+        pinBuffer="";
+        const dots=document.getElementById("pinDots");
+        if(dots)dots.innerHTML=renderDots();
+      }
+    },120);
+  }
+}
+function pinClear(){pinBuffer=pinBuffer.slice(0,-1);const d=document.getElementById("pinDots");if(d)d.innerHTML=renderDots()}
+
+/* ---------- Reloj ---------- */
+let clockPinBuffer="";
+function renderPinDisplay(){
+  const box=document.getElementById("pinDisplay");
+  if(box) box.textContent=clockPinBuffer?"• ".repeat(clockPinBuffer.length).trim():"";
+}
+function pinKey(n){
+  if(clockPinBuffer.length>=8)return;
+  clockPinBuffer+=String(n);
+  renderPinDisplay();
+}
+function pinBackspace(){
+  clockPinBuffer=clockPinBuffer.slice(0,-1);
+  renderPinDisplay();
+}
+function pinSubmit(){
+  const msg=document.getElementById("clockMessage");
+  const pin=clockPinBuffer.trim();
+  if(!pin){msg.textContent="Introduce tu PIN.";return}
+  const emp=db.employees.find(e=>e.active!==false&&String(e.pin)===pin);
+  if(!emp){
+    msg.textContent="PIN no válido.";
+    clockPinBuffer="";
+    renderPinDisplay();
+    return;
+  }
+  const open=db.sessions.find(s=>s.employeeId===emp.id&&!s.salida);
+  doClock(emp);
+  const latest=db.sessions.find(s=>s.employeeId===emp.id&&!s.salida);
+  if(open){
+    msg.innerHTML=`<b>✓ Salida registrada</b><br>Hasta luego, ${esc(emp.name)} · ${fmtTime(new Date().toISOString())}`;
+  }else{
+    msg.innerHTML=`<b>✓ Entrada registrada</b><br>Hola, ${esc(emp.name)} · ${fmtTime(latest.entrada)}`;
+  }
+  renderClock();
+  clockPinBuffer="";
+  renderPinDisplay();
+  setTimeout(()=>{msg.textContent=""},3500);
+}
+
+function openEmp(id){
+  const emp=db.employees.find(e=>e.id===id);if(!emp)return;
+  openPinPad(emp.name,"Ingresa tu PIN para marcar",(pin)=>{
+    if(pin!==emp.pin)return false;
+    doClock(emp);closeModal();return true;
+  });
+}
+function doClock(emp){
+  const open=db.sessions.find(s=>s.employeeId===emp.id&&!s.salida);
+  const now=new Date();
+  if(open){
+    open.salida=now.toISOString();
+    const hrs=(new Date(open.salida)-new Date(open.entrada))/3600000;
+    save();
+    showToast(`Hasta luego, ${emp.name}. Salida ${fmtTime(open.salida)} · ${hrs.toFixed(1)} h`);
+  }else{
+    db.sessions.unshift({id:crypto.randomUUID(),employeeId:emp.id,entrada:now.toISOString(),salida:null});
+    save();
+    showToast(`Hola, ${emp.name}. Entrada registrada ${fmtTime(now.toISOString())}`);
+  }
+}
+function showToast(msg){
+  const t=document.getElementById("toast");
+  t.innerHTML=`<div class="toast">${esc(msg)}</div>`;
+  clearTimeout(window._toastTimer);
+  window._toastTimer=setTimeout(()=>t.innerHTML="",3200);
+}
+function renderClock(){
+  const workingBox=document.getElementById("workingNowList");
+  if(workingBox){
+    const active=db.sessions
+      .filter(s=>s.employeeId && !s.salida)
+      .sort((a,b)=>new Date(a.entrada)-new Date(b.entrada));
+
+    if(!active.length){
+      workingBox.innerHTML='<div class="working-empty">Nadie ha registrado entrada actualmente.</div>';
+    }else{
+      workingBox.innerHTML='<div class="working-list">'+active.map(s=>{
+        const emp=db.employees.find(e=>e.id===s.employeeId);
+        if(!emp || emp.active===false) return "";
+        return `<div class="working-person"><span class="dot"></span><b>${esc(emp.name)}</b> · trabajando</div>`;
+      }).join("")+'</div>';
+    }
+  }
+}
+
+/* ---------- Admin gate ---------- */
+
+function openAdmin(){
+  openPinPad("Administración","Ingresa el PIN de administrador",(pin)=>{
+    if(pin!==db.adminPin)return false;
+    closeModal();showView("reloj");return true;
+  });
+}
+function changeAdminPin(){
+  openPinPad("Nuevo PIN","Escribe el nuevo PIN de administrador (4 dígitos)",(pin)=>{
+    db.adminPin=pin;save();closeModal();showToast("PIN de administrador actualizado");return true;
+  });
+}
+
+/* ---------- Empleados ---------- */
+function openEmployeeForm(id){
+  const e=id?db.employees.find(x=>x.id===id):{};
+  openModal(`<div class="modalhead"><div><h2 style="margin:0">${id?"Editar trabajador":"Agregar trabajador"}</h2></div><button class="close" onclick="closeModal()">✕</button></div>
+  <label>Nombre</label><input id="empName" value="${esc(e.name||"")}">
+  <label>Tarifa por hora (MXN)</label><input id="empRate" type="number" min="0" step="0.5" value="${e.rate??""}">
+  <label>PIN (4 dígitos, para marcar entrada/salida)</label><input id="empPin" maxlength="4" inputmode="numeric" value="${esc(e.pin||"")}">
+  <div class="actions"><button onclick="closeModal()">Cancelar</button>${id?`<button class="danger" onclick="deactivateEmployee('${id}')">Desactivar</button>`:""}<button class="primary" onclick="saveEmployee('${id||""}')">Guardar</button></div>`);
+}
+function saveEmployee(id){
+  const name=document.getElementById("empName").value.trim();
+  const rate=Number(document.getElementById("empRate").value);
+  const pin=document.getElementById("empPin").value.trim();
+  if(!name||!rate||!/^\d{4}$/.test(pin)){alert("Completa nombre, tarifa y un PIN de 4 dígitos.");return}
+  if(db.employees.some(x=>x.pin===pin&&x.id!==id)){alert("Ese PIN ya lo usa otro trabajador. Elige uno distinto.");return}
+  if(id){Object.assign(db.employees.find(x=>x.id===id),{name,rate,pin})}
+  else db.employees.unshift({id:crypto.randomUUID(),name,rate,pin,active:true});
+  closeModal();save();
+}
+function deactivateEmployee(id){
+  const e=db.employees.find(x=>x.id===id);if(!e)return;
+  if(!confirm(`¿Desactivar a ${e.name}? Ya no aparecerá en el reloj, pero su historial se conserva.`))return;
+  e.active=false;closeModal();save();
+}
+function reactivateEmployee(id){const e=db.employees.find(x=>x.id===id);if(e){e.active=true;save()}}
+function renderEmployeeList(){
+  const box=document.getElementById("employeeList");
+  if(!db.employees.length){box.innerHTML="<div class='empty'>No hay trabajadores registrados.</div>";return}
+  box.innerHTML=db.employees.map(e=>{
+    const through=lastPaidThrough(e.id);
+    return `<div class="item"><b>${esc(e.name)}</b> ${e.active?"":"<span class='muted'>(inactivo)</span>"}<br><span class="muted">$${e.rate}/hora · PIN ···· · Pagado hasta: ${through?esc(through):"sin pagos registrados"}</span><div class="actions"><button onclick="openEmployeeForm('${e.id}')">✏️ Editar</button>${e.active?"":`<button class="ok" onclick="reactivateEmployee('${e.id}')">↩ Reactivar</button>`}</div></div>`;
+  }).join("");
+}
+
+/* ---------- Semana / nómina ---------- */
+let weekOffset=0;
+function startOfWeek(d){const day=(d.getDay()+6)%7;const m=new Date(d.getFullYear(),d.getMonth(),d.getDate()-day);m.setHours(0,0,0,0);return m}
+function currentWeekRange(){
+  const base=new Date();base.setDate(base.getDate()+weekOffset*7);
+  const start=startOfWeek(base);const end=new Date(start);end.setDate(end.getDate()+7);
+  return {start,end};
+}
+function changeWeek(delta){weekOffset+=delta;renderAdmin()}
+function sessionsInRange(start,end){
+  return db.sessions.filter(s=>{const t=new Date(s.entrada);return t>=start&&t<end});
+}
+function hoursOf(s){
+  // Las sesiones sin salida no se contabilizan automáticamente.
+  // Un administrador debe corregirlas antes de que entren a nómina.
+  if(!s.entrada || !s.salida) return 0;
+  return Math.max(0,(new Date(s.salida)-new Date(s.entrada))/3600000);
+}
+function sessionStatus(s){
+  if(!s.entrada) return {key:"invalid",label:"Inválida",icon:"⚠️"};
+  if(!s.salida) return {key:"open",label:"Incompleta",icon:"🔴"};
+  const h=hoursOf(s);
+  if(h>12) return {key:"critical",label:"Sospechosa >12 h",icon:"🔴"};
+  if(h>10) return {key:"suspicious",label:"Sospechosa >10 h",icon:"🟡"};
+  return {key:"normal",label:"Normal",icon:"🟢"};
+}
+function isPendingSession(s){
+  const st=sessionStatus(s);
+  return st.key==="open" || st.key==="suspicious" || st.key==="critical";
+}
+function sessionIsApproved(s){return db.approvals?.[String(s.id)]?.status==="approved";}
+function approveSession(id){
+  const s=db.sessions.find(x=>x.id===id);if(!s)return;
+  if(sessionStatus(s).key==="open"){alert("Primero corrige la salida de esta sesión.");return}
+  db.approvals=db.approvals||{};db.approvals[String(id)]={status:"approved",at:new Date().toISOString()};
+  save();showToast("Registro aprobado");
+}
+function weekPendingSessions(){
+  const {start,end}=currentWeekRange();
+  return sessionsInRange(start,end).filter(isPendingSession);
+}
+function finalizeCurrentWeek(){
+  const pending=weekPendingSessions();
+  if(pending.length){alert(`No se puede finalizar la nómina: hay ${pending.length} registro(s) pendientes de revisión.`);return}
+  const {start,end}=currentWeekRange();
+  if(confirm(`¿Confirmar que la semana ${fmtDateShort(start)} – ${fmtDateShort(new Date(end-1))} está revisada y lista para pago?`))showToast("Nómina revisada y lista para pago");
+}
+function renderPayroll(){
+  const {start,end}=currentWeekRange();
+  const inRange=sessionsInRange(start,end);
+  const pending=inRange.filter(isPendingSession);
+  const box=document.getElementById("payrollAlerts");
+  if(box) box.innerHTML=pending.length?`<div class="notice warning"><b>⚠️ ${pending.length} registro(s) requieren revisión.</b><br>Las sesiones sin salida o con más de 10 horas no se contabilizan hasta ser corregidas o aprobadas.</div>`:"";
+  document.getElementById("weekLabel").textContent=`${fmtDateShort(start)} – ${fmtDateShort(new Date(end-1))}`;
+  const rows=db.employees.map(e=>{
+    const s=inRange.filter(x=>x.employeeId===e.id);
+    const hours=s.reduce((a,x)=>a+(isPendingSession(x)&&!sessionIsApproved(x)?0:hoursOf(x)),0);
+    const pending=s.some(x=>isPendingSession(x)&&!sessionIsApproved(x));
+    return {name:e.name,rate:e.rate,hours,pay:hours*e.rate,pending};
+  }).filter(r=>r.hours>0||db.employees.length);
+  const total=rows.reduce((a,r)=>a+r.pay,0);
+  document.getElementById("payrollTable").innerHTML=`<thead><tr><th>Trabajador</th><th>Horas aprobadas</th><th>Tarifa</th><th>Pago</th></tr></thead>
+  <tbody>${rows.length?rows.map(r=>`<tr><td>${esc(r.name)}</td><td>${r.hours.toFixed(1)}${r.pending?" ⚠️":""}</td><td>$${r.rate}/h</td><td>$${r.pay.toFixed(2)}</td></tr>`).join(""):"<tr><td colspan='4' class='empty'>Sin trabajadores</td></tr>"}</tbody>
+  <tfoot><tr><td colspan="3">Total semana</td><td>$${total.toFixed(2)}</td></tr></tfoot>`;
+}
+
+/* ---------- Dashboard de nómina ---------- */
+let dashPeriodValue="all";
+function onDashPeriodChange(){dashPeriodValue=document.getElementById("dashPeriod").value;renderDashboard()}
+function renderDashboard(){
+  const sel=document.getElementById("dashPeriod");if(sel)sel.value=dashPeriodValue;
+  const now=new Date();
+  let startKey=null;
+  if(dashPeriodValue==="month")startKey=localDateKey(new Date(now.getFullYear(),now.getMonth(),1));
+  else if(dashPeriodValue==="quarter"){const d=new Date(now);d.setMonth(d.getMonth()-3);startKey=localDateKey(d);}
+  else if(dashPeriodValue==="year")startKey=localDateKey(new Date(now.getFullYear(),0,1));
+  const filtered=db.payments.filter(p=>!startKey||p.paidDate>=startKey);
+  const total=filtered.reduce((a,p)=>a+Number(p.amount),0);
+  document.getElementById("dashTotal").textContent="$"+total.toFixed(2);
+  document.getElementById("dashCount").textContent=filtered.length;
+  const byEmp={};
+  filtered.forEach(p=>{byEmp[p.employeeId]=(byEmp[p.employeeId]||0)+Number(p.amount)});
+  const rows=db.employees.map(e=>({name:e.name,total:byEmp[e.id]||0})).sort((a,b)=>b.total-a.total);
+  document.getElementById("dashByEmp").innerHTML=rows.length?`<table><thead><tr><th>Trabajador</th><th>Total pagado</th></tr></thead><tbody>${rows.map(r=>`<tr><td>${esc(r.name)}</td><td>$${r.total.toFixed(2)}</td></tr>`).join("")}</tbody></table>`:"<div class='empty'>Aún no hay pagos registrados.</div>";
+}
+
+/* ---------- Pagos ---------- */
+function addDaysKey(dateKey,n){const d=new Date(dateKey+"T00:00:00");d.setDate(d.getDate()+n);return localDateKey(d)}
+function lastPaidThrough(employeeId,excludeId=null){
+  const pays=db.payments.filter(p=>p.employeeId===employeeId&&p.id!==excludeId);
+  if(!pays.length)return null;
+  return pays.reduce((max,p)=>p.periodEnd>max?p.periodEnd:max,pays[0].periodEnd);
+}
+function computeHoursInRange(employeeId,startKey,endKey){
+  return db.sessions.filter(s=>s.employeeId===employeeId).filter(s=>{
+    const k=localDateKey(new Date(s.entrada));return k>=startKey&&k<=endKey;
+  }).reduce((a,s)=>a+hoursOf(s),0);
+}
+function earliestSessionKey(employeeId){
+  const list=db.sessions.filter(s=>s.employeeId===employeeId);
+  if(!list.length)return todayKey();
+  return list.map(s=>localDateKey(new Date(s.entrada))).sort()[0];
+}
+function pendingSummary(e){
+  const through=lastPaidThrough(e.id);
+  const startKey=through?addDaysKey(through,1):earliestSessionKey(e.id);
+  const hours=computeHoursInRange(e.id,startKey,todayKey());
+  return {through,startKey,hours,amount:hours*e.rate};
+}
+let paymentsFilterEmpId="";
+function onPaymentsFilterChange(){paymentsFilterEmpId=document.getElementById("paymentsEmpFilter").value;renderPayments()}
+function renderPayments(){
+  const box=document.getElementById("paymentsSummary");
+  if(!db.employees.length){box.innerHTML="<div class='empty'>No hay trabajadores registrados.</div>";}
+  else box.innerHTML=`<table><thead><tr><th>Trabajador</th><th>Pagado hasta</th><th>Horas pend.</th><th>Monto pend.</th><th></th></tr></thead><tbody>${db.employees.map(e=>{
+    const s=pendingSummary(e);
+    return `<tr><td>${esc(e.name)}</td><td>${s.through?esc(s.through):"—"}</td><td>${s.hours.toFixed(1)}</td><td>$${s.amount.toFixed(2)}</td><td><button class="primary" onclick="openPaymentForm('${e.id}')">Registrar pago</button></td></tr>`;
+  }).join("")}</tbody></table>`;
+  const filterSel=document.getElementById("paymentsEmpFilter");
+  filterSel.innerHTML=`<option value="">Todos los trabajadores</option>${db.employees.map(e=>`<option value="${e.id}" ${e.id===paymentsFilterEmpId?"selected":""}>${esc(e.name)}</option>`).join("")}`;
+  const hist=document.getElementById("paymentsHistory");
+  const list=db.payments.filter(p=>!paymentsFilterEmpId||p.employeeId===paymentsFilterEmpId).slice().sort((a,b)=>b.paidDate.localeCompare(a.paidDate));
+  hist.innerHTML=list.length?list.map(p=>{
+    const emp=db.employees.find(e=>e.id===p.employeeId);
+    return `<div class="item"><b>${esc(emp?emp.name:"Trabajador eliminado")}</b> · $${Number(p.amount).toFixed(2)}<br><span class="muted">Cubre del ${esc(p.periodStart)} al ${esc(p.periodEnd)} · pagado el ${esc(p.paidDate)}${p.note?" · "+esc(p.note):""}</span><div class="actions"><button onclick="openPaymentForm('${p.employeeId}','${p.id}')">✏️ Editar</button><button class="danger" onclick="deletePayment('${p.id}')">🗑️ Eliminar</button></div></div>`;
+  }).join(""):"<div class='empty'>No hay pagos que coincidan con el filtro.</div>";
+}
+let payFormEmployeeId=null,payFormId=null;
+function openPaymentForm(employeeId,paymentId){
+  const emp=db.employees.find(x=>x.id===employeeId);if(!emp)return;
+  const p=paymentId?db.payments.find(x=>x.id===paymentId):null;
+  payFormEmployeeId=employeeId;payFormId=paymentId||null;
+  const through=lastPaidThrough(employeeId,paymentId||null);
+  const defStart=p?p.periodStart:(through?addDaysKey(through,1):earliestSessionKey(employeeId));
+  const defEnd=p?p.periodEnd:todayKey();
+  const defAmount=p?p.amount:(computeHoursInRange(employeeId,defStart,defEnd)*emp.rate).toFixed(2);
+  const defPaidDate=p?p.paidDate:todayKey();
+  const empOptions=db.employees.map(e=>`<option value="${e.id}" ${e.id===employeeId?"selected":""}>${esc(e.name)}</option>`).join("");
+  openModal(`<div class="modalhead"><div><h2 style="margin:0">${paymentId?"Editar pago":"Registrar pago"}</h2>${through?`<div class="muted">Pagado hasta ahora: ${esc(through)}</div>`:""}</div><button class="close" onclick="closeModal()">✕</button></div>
+  <label>Trabajador</label><select id="payEmp" onchange="onPayEmpChange()">${empOptions}</select>
+  <div class="meta"><div><label>Cubre desde</label><input id="payStart" type="date" value="${defStart}" onchange="recalcPayAmount()"></div><div><label>Cubre hasta</label><input id="payEnd" type="date" value="${defEnd}" onchange="recalcPayAmount()"></div></div>
+  <label>Monto a pagar (MXN)</label><input id="payAmount" type="number" min="0" step="0.01" value="${defAmount}">
+  <label>Fecha en que se paga</label><input id="payDate" type="date" value="${defPaidDate}">
+  <label>Nota (opcional)</label><input id="payNote" value="${esc(p?.note||"")}">
+  <div class="actions"><button onclick="closeModal()">Cancelar</button>${paymentId?`<button class="danger" onclick="deletePayment('${paymentId}')">Eliminar</button>`:""}<button class="primary" onclick="savePayment()">Guardar</button></div>`);
+}
+function onPayEmpChange(){payFormEmployeeId=document.getElementById("payEmp").value;recalcPayAmount()}
+function recalcPayAmount(){
+  const start=document.getElementById("payStart").value,end=document.getElementById("payEnd").value;
+  if(!start||!end)return;
+  const emp=db.employees.find(x=>x.id===payFormEmployeeId);if(!emp)return;
+  document.getElementById("payAmount").value=(computeHoursInRange(payFormEmployeeId,start,end)*emp.rate).toFixed(2);
+}
+function savePayment(){
+  const employeeId=payFormEmployeeId;
+  const start=document.getElementById("payStart").value,end=document.getElementById("payEnd").value;
+  const amount=Number(document.getElementById("payAmount").value);
+  const paidDate=document.getElementById("payDate").value;
+  const note=document.getElementById("payNote").value;
+  if(!employeeId||!start||!end||!paidDate||!amount){alert("Completa el periodo, el monto y la fecha de pago.");return}
+  if(start>end){alert("La fecha de inicio del periodo no puede ser después de la de fin.");return}
+  const through=lastPaidThrough(employeeId,payFormId);
+  if(through&&start<=through){
+    if(!confirm(`Ya hay un pago registrado que cubre hasta el ${through}. Este nuevo pago inicia el ${start}, dentro de ese rango ya pagado.\n\n¿Seguro que quieres continuar? Esto puede causar un pago duplicado.`))return;
+  }
+  if(payFormId){Object.assign(db.payments.find(x=>x.id===payFormId),{employeeId,periodStart:start,periodEnd:end,amount,paidDate,note})}
+  else db.payments.unshift({id:crypto.randomUUID(),employeeId,periodStart:start,periodEnd:end,amount,paidDate,note});
+  closeModal();save();
+}
+function deletePayment(id){if(!confirm("¿Eliminar este pago del historial?"))return;db.payments=db.payments.filter(x=>x.id!==id);closeModal();save()}
+function exportPaymentsCSV(){
+  let csv="Trabajador,Cubre desde,Cubre hasta,Monto,Fecha de pago,Nota\n";
+  db.payments.slice().sort((a,b)=>a.paidDate.localeCompare(b.paidDate)).forEach(p=>{
+    const emp=db.employees.find(e=>e.id===p.employeeId);
+    csv+=`${emp?emp.name:"?"},${p.periodStart},${p.periodEnd},${Number(p.amount).toFixed(2)},${p.paidDate},"${(p.note||"").replace(/"/g,'""')}"\n`;
+  });
+  downloadBlob(csv,`historial_pagos_${todayKey()}.csv`,"text/csv");
+}
+
+/* ---------- Registros / correcciones ---------- */
+function openSessionForm(id){
+  const s=id?db.sessions.find(x=>x.id===id):{};
+  const empOptions=db.employees.map(e=>`<option value="${e.id}" ${s.employeeId===e.id?"selected":""}>${esc(e.name)}</option>`).join("");
+  const entradaVal=s.entrada?toLocalInput(s.entrada):toLocalInput(new Date().toISOString());
+  const salidaVal=s.salida?toLocalInput(s.salida):"";
+  openModal(`<div class="modalhead"><div><h2 style="margin:0">${id?"Editar registro":"Agregar registro manual"}</h2></div><button class="close" onclick="closeModal()">✕</button></div>
+  <label>Trabajador</label><select id="sesEmp">${empOptions}</select>
+  <label>Entrada</label><input id="sesIn" type="datetime-local" value="${entradaVal}">
+  <label>Salida (vacío si sigue trabajando)</label><input id="sesOut" type="datetime-local" value="${salidaVal}">
+  <div class="actions"><button onclick="closeModal()">Cancelar</button>${id?`<button class="danger" onclick="deleteSession('${id}')">Eliminar</button>`:""}<button class="primary" onclick="saveSession('${id||""}')">Guardar</button></div>`);
+}
+function toLocalInput(iso){const d=new Date(iso);return `${d.getFullYear()}-${pad(d.getMonth()+1)}-${pad(d.getDate())}T${pad(d.getHours())}:${pad(d.getMinutes())}`}
+function saveSession(id){
+  const employeeId=document.getElementById("sesEmp").value;
+  const inVal=document.getElementById("sesIn").value;
+  const outVal=document.getElementById("sesOut").value;
+  if(!employeeId||!inVal){alert("Selecciona trabajador y hora de entrada.");return}
+  const entrada=new Date(inVal).toISOString();
+  const salida=outVal?new Date(outVal).toISOString():null;
+  if(salida&&new Date(salida)<new Date(entrada)){alert("La salida no puede ser antes de la entrada.");return}
+  if(id){Object.assign(db.sessions.find(x=>x.id===id),{employeeId,entrada,salida})}
+  else db.sessions.unshift({id:crypto.randomUUID(),employeeId,entrada,salida});
+  closeModal();save();
+}
+function deleteSession(id){if(!confirm("¿Eliminar este registro?"))return;db.sessions=db.sessions.filter(x=>x.id!==id);closeModal();save()}
+function renderSessionList(){
+  const {start,end}=currentWeekRange();
+  const list=sessionsInRange(start,end);
+  const box=document.getElementById("sessionList");
+  if(!list.length){box.innerHTML="<div class='empty'>Sin registros esta semana.</div>";return}
+  const groups={};
+  list.forEach(s=>{
+    const key=s.employeeId+"|"+localDateKey(new Date(s.entrada));
+    (groups[key]=groups[key]||[]).push(s);
+  });
+  const keys=Object.keys(groups).sort((a,b)=>{
+    const [,da]=a.split("|"),[,db_]=b.split("|");
+    return db_.localeCompare(da);
+  });
+  box.innerHTML=keys.map(key=>{
+    const [empId,dateKey]=key.split("|");
+    const emp=db.employees.find(e=>e.id===empId);
+    const sessions=groups[key].slice().sort((x,y)=>new Date(x.entrada)-new Date(y.entrada));
+    const dayTotal=sessions.reduce((a,s)=>a+hoursOf(s),0);
+    const pending=sessions.some(isPendingSession);
+    const through=lastPaidThrough(empId);
+    const paid=through&&dateKey<=through;
+    const shifts=sessions.map(s=>{
+      const st=sessionStatus(s);
+      const duration=s.salida?hoursOf(s).toFixed(1):"0.0";
+      return `<div style="padding:5px 0 5px 10px;border-left:2px solid var(--line)">
+        ${st.icon} ${fmtTime(s.entrada)} → ${s.salida?fmtTime(s.salida):"sin salida"} · ${duration} h · <b>${st.label}</b>
+        <button onclick="openSessionForm('${s.id}')" style="margin-left:6px;padding:3px 8px;font-size:11px">✏️</button>${isPendingSession(s)&&s.salida?`<button onclick="approveSession('${s.id}')" style="margin-left:4px;padding:3px 8px;font-size:11px">✓ Aprobar</button>`:""}
+      </div>`;
+    }).join("");
+    return `<div class="item"><b>${esc(emp?emp.name:"Trabajador eliminado")}</b> · ${esc(dateKey)}
+      ${sessions.length>1?`<span class="tag2">${sessions.length} turnos</span>`:""}
+      ${pending?`<span class="tag2">⚠️ Revisar</span>`:""}
+      <span style="float:right;font-weight:900">${dayTotal.toFixed(1)} h${paid?" · ✅ pagado":""}</span>${shifts}</div>`;
+  }).join("");
+}
+
+/* ---------- Export / backup ---------- */
+function downloadBlob(content,filename,type){
+  const blob=new Blob([content],{type});
+  const a=document.createElement("a");
+  a.href=URL.createObjectURL(blob);a.download=filename;a.click();
+  URL.revokeObjectURL(a.href);
+}
+function exportWeekCSV(){
+  const {start,end}=currentWeekRange();
+  const inRange=sessionsInRange(start,end);
+  let csv="Trabajador,Tarifa,Horas aprobadas,Pago\n";
+  db.employees.forEach(e=>{
+    const s=inRange.filter(x=>x.employeeId===e.id);
+    const hours=s.reduce((a,x)=>a+hoursOf(x),0);
+    csv+=`${e.name},${e.rate},${hours.toFixed(2)},${(hours*e.rate).toFixed(2)}\n`;
+  });
+  csv+="\nRegistros detallados\nTrabajador,Fecha,Entrada,Salida,Horas aprobadas,Estado\n";
+  inRange.forEach(s=>{
+    const emp=db.employees.find(e=>e.id===s.employeeId);
+    csv+=`${emp?emp.name:"?"},${localDateKey(new Date(s.entrada))},${fmtTime(s.entrada)},${s.salida?fmtTime(s.salida):"sin salida"},${hoursOf(s).toFixed(2)},${sessionStatus(s).label}\n`;
+  });
+  downloadBlob(csv,`nomina_semana_${localDateKey(start)}.csv`,"text/csv");
+}
+function exportBackupJSON(){downloadBlob(JSON.stringify(db,null,2),`respaldo_nomina_${localDateKey(new Date())}.json`,"application/json")}
+function importBackupJSON(ev){
+  const file=ev.target.files[0];if(!file)return;
+  const reader=new FileReader();
+  reader.onload=()=>{
+    try{
+      const data=JSON.parse(reader.result);
+      if(!Array.isArray(data.employees)||!Array.isArray(data.sessions)){alert("El archivo no tiene el formato esperado.");return}
+      if(!confirm("Esto reemplazará los datos actuales con los del respaldo. ¿Continuar?"))return;
+      db=data;save();showToast("Respaldo importado correctamente");
+    }catch(e){alert("No se pudo leer el archivo.");}
+  };
+  reader.readAsText(file);
+  ev.target.value="";
+}
+function resetAllData(){
+  if(!confirm("Esto borrará TODOS los trabajadores y registros de esta app. ¿Continuar?"))return;
+  if(!confirm("Confirma una vez más: se perderá todo el historial de horario y nómina."))return;
+  db=blankDB();save();showToast("Datos restablecidos");
+}
+
+/* ---------- Modal ---------- */
+function openModal(html){document.getElementById("modalBox").innerHTML=html;document.getElementById("modal").classList.remove("hidden")}
+function closeModal(){document.getElementById("modal").classList.add("hidden")}
+document.getElementById("modal").addEventListener("click",e=>{if(e.target.id==="modal")closeModal()});
+document.addEventListener("keydown",e=>{if(e.key==="Escape")closeModal()});
+
+function renderAdmin(){renderDashboard();renderEmployeeList();renderPayroll();renderPayments();renderSessionList()}
+function renderAll(){renderClock();renderAdmin()}
+renderAll();
+</script>
+
+
+
+
+<script>
+/* =========================================================
+   V1.8 — Acceso de administrador con pantalla de teclado PIN
+   ========================================================= */
+(function(){
+  const DEFAULT_ADMIN_PIN="1234";
+  const normalizePin=v=>String(v??"").replace(/\D/g,"").slice(0,4);
+  const getAdminPin=()=>{
+    for(const key of ["adminPin","admin_pin","panorama_admin_pin"]){
+      const p=normalizePin(localStorage.getItem(key));
+      if(p.length===4) return p;
+    }
+    return DEFAULT_ADMIN_PIN;
+  };
+
+  function showAdminView(){
+    if(typeof window.showView==="function"){
+      for(const id of ["admin","administracion","personal"]){
+        if(document.getElementById(id)){ window.showView(id); return true; }
+      }
+    }
+    return false;
+  }
+
+  function openAdminKeypad(){
+    const existing=document.getElementById("adminPinScreen");
+    if(existing){
+      existing.style.display="flex";
+      existing.classList.add("active");
+      existing.querySelector("input")?.focus();
+      return;
+    }
+
+    let value="";
+    const overlay=document.createElement("div");
+    overlay.id="adminPinScreen";
+    overlay.className="admin-pin-screen";
+    overlay.innerHTML=`
+      <div class="admin-pin-card">
+        <div class="admin-pin-lock">🔒</div>
+        <h2>Administración</h2>
+        <p>Ingresa el PIN de administrador</p>
+        <div class="admin-pin-dots" aria-label="PIN">${[0,1,2,3].map(()=>'<span></span>').join("")}</div>
+        <div class="admin-keypad">
+          ${[1,2,3,4,5,6,7,8,9].map(n=>`<button type="button" data-key="${n}">${n}</button>`).join("")}
+          <button type="button" data-key="clear">⌫</button>
+          <button type="button" data-key="0">0</button>
+          <button type="button" data-key="cancel">Cancelar</button>
+        </div>
+        <div class="admin-pin-error" aria-live="polite"></div>
+      </div>`;
+    document.body.appendChild(overlay);
+
+    const dots=[...overlay.querySelectorAll(".admin-pin-dots span")];
+    const error=overlay.querySelector(".admin-pin-error");
+    const render=()=>dots.forEach((d,i)=>d.classList.toggle("filled",i<value.length));
+    const close=()=>{ overlay.style.display="none"; value=""; error.textContent=""; render(); };
+
+    overlay.addEventListener("click",e=>{
+      const key=e.target.closest("[data-key]")?.dataset.key;
+      if(!key)return;
+      if(key==="cancel"){close();return;}
+      if(key==="clear"){value=value.slice(0,-1);error.textContent="";render();return;}
+      if(value.length<4){value+=key;error.textContent="";render();}
+      if(value.length===4){
+        setTimeout(()=>{
+          if(value===getAdminPin()){
+            close();
+            if(!showAdminView()) error.textContent="PIN correcto, pero no se encontró Administración.";
+          }else{
+            error.textContent="PIN incorrecto";
+            value=""; render();
+          }
+        },120);
+      }
+    });
+
+    document.addEventListener("keydown",function handler(e){
+      if(overlay.style.display==="none") return;
+      if(/^\d$/.test(e.key)){ const b=overlay.querySelector(`[data-key="${e.key}"]`); b?.click(); }
+      if(e.key==="Backspace") overlay.querySelector('[data-key="clear"]')?.click();
+      if(e.key==="Escape") overlay.querySelector('[data-key="cancel"]')?.click();
+    });
+    render();
+  }
+
+  window.openAdmin=openAdminKeypad;
+  window.openAdminProtected=openAdminKeypad;
+
+  document.addEventListener("DOMContentLoaded",()=>{
+    document.querySelectorAll("button,a,[role='button']").forEach(el=>{
+      const label=(el.textContent||el.getAttribute("aria-label")||"").trim().toLowerCase();
+      const action=(el.getAttribute("onclick")||"").toLowerCase();
+      if(label.includes("administr")||action.includes("openadmin")){
+        el.onclick=function(e){e?.preventDefault();openAdminKeypad();return false;};
+      }
+    });
+  });
+})();
+</script>
+<style>
+.admin-pin-screen{
+  position:fixed;inset:0;z-index:100000;display:flex;align-items:center;justify-content:center;
+  padding:20px;background:rgba(20,18,16,.72);backdrop-filter:blur(10px);-webkit-backdrop-filter:blur(10px);
+}
+.admin-pin-card{
+  width:min(100%,390px);padding:30px 24px 24px;border-radius:28px;text-align:center;
+  background:var(--panel,#f6f1e8);box-shadow:0 24px 70px rgba(0,0,0,.35);
+}
+.admin-pin-lock{font-size:36px;margin-bottom:8px}
+.admin-pin-card h2{margin:0 0 6px}
+.admin-pin-card p{margin:0 0 22px;opacity:.7}
+.admin-pin-dots{display:flex;justify-content:center;gap:14px;margin:10px 0 24px}
+.admin-pin-dots span{width:14px;height:14px;border-radius:50%;border:2px solid currentColor;opacity:.45}
+.admin-pin-dots span.filled{background:currentColor;opacity:1}
+.admin-keypad{display:grid;grid-template-columns:repeat(3,1fr);gap:10px}
+.admin-keypad button{min-height:58px;border-radius:16px;border:1px solid rgba(0,0,0,.12);font-size:20px;font-weight:700;background:rgba(255,255,255,.72);cursor:pointer}
+.admin-keypad button:active{transform:scale(.97)}
+.admin-keypad [data-key="cancel"]{font-size:13px}
+.admin-pin-error{min-height:22px;margin-top:14px;color:#b3261e;font-weight:700}
+@media(max-width:480px){
+ .admin-pin-screen{align-items:flex-end;padding:0}
+ .admin-pin-card{width:100%;border-radius:28px 28px 0 0;padding:28px 20px max(24px,env(safe-area-inset-bottom))}
+}
+</style>
+
+
+<script>
+(function(){
+  if("serviceWorker" in navigator && location.protocol !== "file:"){
+    window.addEventListener("load",()=>{
+      navigator.serviceWorker.register("./service-worker.js")
+        .then(reg=>{
+          reg.update().catch(()=>{});
+          reg.addEventListener("updatefound",()=>{
+            const worker=reg.installing;
+            if(worker){
+              worker.addEventListener("statechange",()=>{
+                if(worker.state==="installed" && navigator.serviceWorker.controller){
+                  worker.postMessage({type:"SKIP_WAITING"});
+                }
+              });
+            }
+          });
+        })
+        .catch(()=>{});
+      let refreshing=false;
+      navigator.serviceWorker.addEventListener("controllerchange",()=>{
+        if(!refreshing){ refreshing=true; location.reload(); }
+      });
+    });
+  }
+})();
+</script>
+
+</body>
+</html>
