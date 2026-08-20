@@ -1,1 +1,0 @@
-/* Lógica Core retirada. La prueba mínima usa panorama-core-integration.js directamente. */
