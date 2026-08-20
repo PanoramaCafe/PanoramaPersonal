@@ -1,15 +1,15 @@
 (()=>{
-const ENDPOINT='https://dtmhffgpwxzdncbuoohb.supabase.co/functions/v1/panorama-personal-sync';
+const ENDPOINT='https://dtmhffgpwxzdncbuoohb.supabase.co/functions/v1/panorama-personal-sync-v2';
 const APIKEY='sb_publishable_S_wZkfLNvx0mnHBLGHcfgg_Q_SkycdW';
-let key=null,last='',ready=false,applying=false,lastRemote='';
 const headers={'Content-Type':'application/json','apikey':APIKEY,'Authorization':'Bearer '+APIKEY};
-const score=(o)=>{if(!o||typeof o!=='object'||Array.isArray(o))return 0;const k=Object.keys(o).join(' ').toLowerCase();let s=0;['employee','emplead','session','attendance','work','hora','payment','pago','payroll','nomina','bonus','bono','review','week'].forEach(x=>{if(k.includes(x))s+=2});return s};
-function find(){let best=null,bs=0;for(let i=0;i<localStorage.length;i++){const k=localStorage.key(i);try{const v=JSON.parse(localStorage.getItem(k));const s=score(v);if(s>bs){bs=s;best={key:k,data:v}}}catch{}}return best}
-function fingerprint(v){try{return JSON.stringify(v)}catch{return ''}}
-async function getRemote(){const r=await fetch(ENDPOINT,{method:'GET',headers,cache:'no-store'});if(!r.ok)throw new Error('GET '+r.status+' '+await r.text());return await r.json()}
-async function push(data){const r=await fetch(ENDPOINT,{method:'POST',headers,body:JSON.stringify({data:{__panorama_sync:true,key,data}})});if(!r.ok)throw new Error('POST '+r.status+' '+await r.text())}
-function remotePayload(row){if(!row||!row.data)return null;const d=row.data;return d&&d.__panorama_sync?d:null}
-async function boot(){try{const row=await getRemote();const p=remotePayload(row);const found=find();if(p){key=p.key||key||(found&&found.key);const remote=fingerprint(p.data);if(key&&remote!==fingerprint(found&&found.data)){applying=true;localStorage.setItem(key,remote);localStorage.setItem('__panorama_remote_state_v1',remote);applying=false;location.reload();return}last=remote;lastRemote=remote}else if(found){key=found.key;last=fingerprint(found.data);await push(found.data);lastRemote=last}ready=true}catch(e){ready=true;console.warn('Panorama sync offline',e)}}
-async function tick(){const found=key?(()=>{try{return {key,data:JSON.parse(localStorage.getItem(key))}}catch{return find()}})():find();if(found){key=found.key;const cur=fingerprint(found.data);if(ready&&cur!==last&&!applying){last=cur;try{await push(found.data);lastRemote=cur}catch(e){console.warn('Pendiente de sincronizar',e)}}}if(ready&&navigator.onLine){try{const row=await getRemote();const p=remotePayload(row);if(p){const remote=fingerprint(p.data);if(remote!==lastRemote&&remote!==last){key=p.key||key;applying=true;localStorage.setItem(key,remote);localStorage.setItem('__panorama_remote_state_v1',remote);applying=false;location.reload();return}lastRemote=remote}}catch{}}}
-window.addEventListener('online',tick);window.addEventListener('focus',tick);setInterval(tick,2500);boot();
+let key=null,last='',remote='',ready=false,applying=false,busy=false;
+const fp=v=>JSON.stringify(v);
+function find(){for(let i=0;i<localStorage.length;i++){const k=localStorage.key(i);try{const d=JSON.parse(localStorage.getItem(k));if(d&&typeof d==='object'&&!Array.isArray(d)&&(/employee|emplead|hora|pago|nomina|bono/i.test(Object.keys(d).join(' '))))return {key:k,data:d}}catch{}}return null}
+async function api(method,body){const r=await fetch(ENDPOINT,{method,headers,cache:'no-store',body:body?JSON.stringify(body):undefined});const t=await r.text();if(!r.ok)throw Error(method+' '+r.status+' '+t);return t?JSON.parse(t):null}
+async function upload(data){await api('POST',{data:{__panorama_sync:true,key,data}})}
+function unpack(row){return row?.data?.__panorama_sync?row.data:null}
+function apply(p){if(!p?.data)return;key=p.key||key;const s=fp(p.data);applying=true;localStorage.setItem(key,s);last=s;remote=s;applying=false;location.reload()}
+async function start(){const f=find();if(f){key=f.key;last=fp(f.data)}try{const row=await api('GET');const p=unpack(row);if(p){const s=fp(p.data);if(s!==last)apply(p);else remote=s}else if(f){await upload(f.data);remote=last}}catch(e){console.warn('Panorama Personal offline',e)}ready=true}
+async function sync(){if(busy||applying)return;busy=true;try{const f=key?(()=>{try{return {key,data:JSON.parse(localStorage.getItem(key))}}catch{return find()}})():find();if(f){key=f.key;const s=fp(f.data);if(s!==last){last=s;try{await upload(f.data);remote=s}catch(e){console.warn('Pendiente',e)}}}if(ready&&navigator.onLine){const row=await api('GET');const p=unpack(row);if(p){const s=fp(p.data);if(s!==remote&&s!==last)apply(p);else remote=s}}}catch(e){console.warn('Panorama sync',e)}finally{busy=false}}
+window.addEventListener('online',sync);window.addEventListener('focus',sync);setInterval(sync,2000);start();
 })();
