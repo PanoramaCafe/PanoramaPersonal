@@ -2,10 +2,11 @@
 (async()=>{
   const cfg=window.PANORAMA_SUPABASE;
   if(!cfg){console.warn('Panorama Core: missing config');return;}
+  await (window.PanoramaAuth?.ready||Promise.resolve());
   const api=cfg.url+'/rest/v1/';
-  const headers={apikey:cfg.key,Authorization:'Bearer '+cfg.key,'Content-Type':'application/json'};
   async function request(path,opts={}){
-    const response=await fetch(api+path,{...opts,headers:{...headers,...opts.headers}});
+    const authHeaders=window.PanoramaAuth?.headers?.()||{apikey:cfg.key,'Content-Type':'application/json'};
+    const response=await fetch(api+path,{...opts,headers:{...authHeaders,...opts.headers}});
     const body=await response.text();
     if(!response.ok)throw new Error(body||response.statusText);
     return body?JSON.parse(body):null;
