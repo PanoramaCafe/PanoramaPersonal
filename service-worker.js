@@ -1,6 +1,9 @@
-const CACHE_NAME="panorama-personal-v2-sync";
-const APP_SHELL=["./","./index.html","./index-sync.html","./manifest.json","./panorama-sync.js"];
-self.addEventListener('install',e=>e.waitUntil(caches.open(CACHE_NAME).then(c=>c.addAll(APP_SHELL)).then(()=>self.skipWaiting())));
-self.addEventListener('activate',e=>e.waitUntil(caches.keys().then(keys=>Promise.all(keys.filter(k=>k!==CACHE_NAME).map(k=>caches.delete(k)))).then(()=>self.clients.claim())));
-self.addEventListener('message',e=>{if(e.data&&e.data.type==='SKIP_WAITING')self.skipWaiting();});
-self.addEventListener('fetch',e=>{if(e.request.method!=="GET")return;const u=new URL(e.request.url);if(e.request.mode==='navigate'&&!u.pathname.endsWith('/index-sync.html')){e.respondWith(Response.redirect(new URL('./index-sync.html',self.registration.scope),302));return;}e.respondWith(caches.match(e.request).then(r=>r||fetch(e.request,{cache:u.pathname.endsWith('/index.html')?'no-store':'default'})));});
+const CACHE_NAME='panorama-personal-clean-v1';
+const APP_SHELL=['./','./index.html','./manifest.json','./supabase-config.js','./panorama-auth.js','./panorama-core.js','./panorama-core-integration.js'];
+self.addEventListener('install',event=>event.waitUntil(caches.open(CACHE_NAME).then(cache=>cache.addAll(APP_SHELL)).then(()=>self.skipWaiting())));
+self.addEventListener('activate',event=>event.waitUntil(caches.keys().then(keys=>Promise.all(keys.filter(key=>key!==CACHE_NAME).map(key=>caches.delete(key)))).then(()=>self.clients.claim())));
+self.addEventListener('message',event=>{if(event.data?.type==='SKIP_WAITING')self.skipWaiting();});
+self.addEventListener('fetch',event=>{
+  if(event.request.method!=='GET') return;
+  event.respondWith(fetch(event.request).catch(()=>caches.match(event.request)));
+});
