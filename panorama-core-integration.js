@@ -44,8 +44,8 @@
   }
 
   try {
-    for (const employee of (window.db?.employees || [])) await syncEmployee(employee);
-    if (typeof window.save === 'function') window.save();
+    for (const employee of (db?.employees || [])) await syncEmployee(employee);
+    if (typeof save === 'function') save();
     console.info('Panorama Core: empleados sincronizados');
   } catch (error) {
     console.error('Panorama Core: prueba mínima falló', error);
