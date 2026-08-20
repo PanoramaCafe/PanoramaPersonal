@@ -489,6 +489,21 @@ function finalizeCurrentWeek(){
     db.weekFinalizations[key]={status:"finalized",finalizedAt:new Date().toISOString()};
     db.payrollPeriods[key]={id:key,start:localDateKey(start),end:localDateKey(new Date(end-1)),status:"finalized",finalizedAt:new Date().toISOString(),snapshot};
     save();showToast("Periodo de nómina finalizado y guardado");
+    if(!window.PanoramaCore?.syncFinalizedPeriod){
+      showToast("Nómina finalizada. La sincronización con Finanzas no está disponible.");
+      return;
+    }
+    const period=db.payrollPeriods[key];
+    window.PanoramaCore.syncFinalizedPeriod({...period,localEmployees:db.employees})
+      .then(rows=>{
+        period.coreRequests=rows;
+        save();
+        showToast("Solicitudes de pago enviadas a Finanzas");
+      })
+      .catch(error=>{
+        console.error("No se pudieron enviar las solicitudes de pago",error);
+        showToast("Nómina finalizada localmente; no se pudo enviar a Finanzas.");
+      });
   }
 }
 function renderPayroll(){
@@ -516,7 +531,7 @@ function renderDashboard(){const sel=document.getElementById("dashPeriod");if(se
 
 /* ---------- Pagos ---------- */
 function payrollPaymentRecords(periodId,employeeId){return db.payments.filter(p=>p.payrollPeriodId===periodId&&p.employeeId===employeeId)}
-function payrollEmployeePaid(periodId,employeeId){return payrollPaymentRecords(periodId,employeeId).some(p=>p.status!=="void")}
+function payrollEmployeePaid(periodId,employeeId){const period=db.payrollPeriods?.[periodId];return payrollPaymentRecords(periodId,employeeId).some(p=>p.status!=="void")||period?.corePaymentStatuses?.[employeeId]?.status==="PAID"}
 function updatePayrollPeriodPaymentStatus(periodId){
   const period=db.payrollPeriods?.[periodId];if(!period?.snapshot?.employees)return;
   const allPaid=period.snapshot.employees.every(x=>payrollEmployeePaid(periodId,x.employeeId));
@@ -525,6 +540,31 @@ function updatePayrollPeriodPaymentStatus(periodId){
   if(allPaid&&!period.paidAt)period.paidAt=new Date().toISOString();
   if(!allPaid)delete period.paidAt;
 }
+let corePaymentStatusRefreshInFlight=false;
+async function syncCorePaymentStatuses(){
+  if(corePaymentStatusRefreshInFlight||!window.PanoramaCore?.paymentStatus)return;
+  const periods=Object.values(db.payrollPeriods||{}).filter(p=>p?.snapshot?.employees?.length);
+  if(!periods.length)return;
+  corePaymentStatusRefreshInFlight=true;
+  try{
+    let changed=false;
+    for(const period of periods){
+      period.corePaymentStatuses=period.corePaymentStatuses||{};
+      for(const line of period.snapshot.employees){
+        const rows=await window.PanoramaCore.paymentStatus(period.id,line.employeeId);
+        const status=rows?.[0];
+        if(status&&period.corePaymentStatuses[line.employeeId]?.status!==status.status){
+          period.corePaymentStatuses[line.employeeId]={id:status.id,status:status.status};
+          changed=true;
+        }
+      }
+    }
+    if(changed){localStorage.setItem(STORE,JSON.stringify(db));renderPayroll();renderPayments();}
+  }catch(error){console.warn("No se pudieron actualizar los estados de pago",error);}
+  finally{corePaymentStatusRefreshInFlight=false;}
+}
+window.addEventListener("panorama-core-personal-ready",()=>syncCorePaymentStatuses());
+
 function renderPayrollPaymentQueue(){
   const box=document.getElementById("payrollPaymentQueue");if(!box)return;
   const periods=Object.values(db.payrollPeriods||{}).filter(p=>p?.snapshot?.employees?.length).sort((a,b)=>b.start.localeCompare(a.start));
@@ -812,5 +852,7 @@ renderAll();
 })();
 </script>
 
+<script src="supabase-config.js"></script>
+<script src="panorama-core-integration.js"></script>
 </body>
 </html>
