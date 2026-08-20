@@ -1,146 +1,25 @@
-/* Panorama Core integration: Personal
-   La nómina semanal solo controla y guarda periodos.
-   El único registro de pagos vive en la sección Pagos.
-*/
+/* Panorama Core integration: Personal */
 (async()=>{
-  const cfg=window.PANORAMA_SUPABASE;
-  if(!cfg){console.warn('Panorama Core: missing config');return;}
+  const cfg=window.PANORAMA_SUPABASE;if(!cfg)return;
   await (window.PanoramaAuth?.ready||Promise.resolve());
   const api=cfg.url+'/rest/v1/';
-  async function request(path,opts={}){
-    const authHeaders=window.PanoramaAuth?.headers?.()||{apikey:cfg.key,'Content-Type':'application/json'};
-    const response=await fetch(api+path,{...opts,headers:{...authHeaders,...opts.headers}});
-    const body=await response.text();
-    if(!response.ok)throw new Error(body||response.statusText);
-    return body?JSON.parse(body):null;
-  }
+  async function request(path,opts={}){const h=window.PanoramaAuth?.headers?.()||{apikey:cfg.key,'Content-Type':'application/json'};const r=await fetch(api+path,{...opts,headers:{...h,...opts.headers}});const t=await r.text();if(!r.ok)throw Error(t||r.statusText);return t?JSON.parse(t):null;}
+  window.PanoramaCore={async syncEmployee(employee){const p={full_name:employee.name||employee.full_name,active:employee.active!==false,created_by_app:'personal',updated_by_app:'personal'};let rows;if(employee.coreEmployeeId)rows=await request('employees?id=eq.'+encodeURIComponent(employee.coreEmployeeId),{method:'PATCH',body:JSON.stringify(p),headers:{Prefer:'return=representation'}});if(!rows?.[0])rows=await request('employees',{method:'POST',body:JSON.stringify(p),headers:{Prefer:'return=representation'}});if(rows?.[0])employee.coreEmployeeId=rows[0].id;return rows?.[0];}};
+  window.renderPayrollPaymentQueue=function(){const b=document.getElementById('payrollPaymentQueue');if(b)b.innerHTML='';};window.syncCorePaymentStatuses=async function(){};
+  Object.values(db.payrollPeriods||{}).forEach(p=>{if(p){delete p.coreRequests;delete p.corePaymentStatuses;delete p.paidAt;if(p.status==='paid'||p.status==='partial')p.status='finalized';}});
+  try{localStorage.setItem(STORE,JSON.stringify(db));}catch{}
+  if(typeof renderAdmin==='function')renderAdmin();window.dispatchEvent(new CustomEvent('panorama-core-personal-ready'));
 
-  window.PanoramaCore={
-    async syncEmployee(employee){
-      const payload={full_name:employee.name||employee.full_name,active:employee.active!==false,created_by_app:'personal',updated_by_app:'personal'};
-      if(employee.coreEmployeeId){
-        const rows=await request('employees?id=eq.'+encodeURIComponent(employee.coreEmployeeId),{method:'PATCH',body:JSON.stringify(payload),headers:{Prefer:'return=representation'}});
-        if(rows?.[0])return rows[0];
-      }
-      const rows=await request('employees',{method:'POST',body:JSON.stringify(payload),headers:{Prefer:'return=representation'}});
-      if(!rows?.[0])throw new Error('No se pudo crear el empleado en Panorama Core.');
-      employee.coreEmployeeId=rows[0].id;
-      return rows[0];
-    }
-  };
-
-  /* UNIFICACIÓN: la nómina semanal no genera pagos ni solicitudes a Finanzas. */
-  window.renderPayrollPaymentQueue=function(){
-    const box=document.getElementById('payrollPaymentQueue');
-    if(box)box.innerHTML='';
-  };
-  window.syncCorePaymentStatuses=async function(){};
-
-  window.finalizeCurrentWeek=function(){
-    const pending=weekPendingSessions();
-    if(pending.length){
-      alert(`No se puede finalizar la nómina: hay ${pending.length} registro(s) pendientes de revisión.`);
-      return;
-    }
-    const {start,end}=currentWeekRange(),key=payrollPeriodKey(start);
-    db.payrollPeriods=db.payrollPeriods||{};
-    const snapshot=buildPayrollSnapshot(start,end);
-    if(!snapshot.employees.length){
-      alert('No hay horas aprobadas para finalizar en este periodo.');
-      return;
-    }
-    if(confirm(`¿Confirmar la nómina del ${fmtDateShort(start)} al ${fmtDateShort(new Date(end-1))}?\n\nSe guardará una fotografía de ${snapshot.employees.length} trabajador(es), ${snapshot.totalHours.toFixed(1)} horas y $${snapshot.totalAmount.toFixed(2)}.`)){
-      db.weekFinalizations=db.weekFinalizations||{};
-      db.weekFinalizations[key]={status:'finalized',finalizedAt:new Date().toISOString()};
-      db.payrollPeriods[key]={id:key,start:localDateKey(start),end:localDateKey(new Date(end-1)),status:'finalized',finalizedAt:new Date().toISOString(),snapshot};
-      save();
-      showToast('Periodo de nómina finalizado y guardado. Los pagos se registran únicamente en Pagos.');
-    }
-  };
-
-  /* Limpia metadatos del sistema duplicado sin borrar pagos existentes. */
-  Object.values(db.payrollPeriods||{}).forEach(period=>{
-    if(period){
-      delete period.coreRequests;
-      delete period.corePaymentStatuses;
-      delete period.paidAt;
-      if(period.status==='paid'||period.status==='partial')period.status='finalized';
-    }
-  });
-
-  /*
-    RESUMEN CORRECTO DE PAGOS
-    Separa dinero realmente entregado de dinero aplicado a nómina.
-    Un pago nunca puede inflar "Nómina pagada" por encima de la nómina generada:
-      aplicado = min(total pagado, nómina generada)
-      excedente = max(total pagado - nómina generada, 0)
-      pendiente = max(nómina generada - total pagado, 0)
-  */
-  function ensureExcessStat(){
-    const stats=document.querySelector('#dashTotal')?.closest('.stats');
-    if(!stats)return null;
-    let card=document.getElementById('dashExcessCard');
-    if(!card){
-      card=document.createElement('div');
-      card.className='stat';
-      card.id='dashExcessCard';
-      card.innerHTML='<div class="num" id="dashExcess">$0.00</div><div class="muted">Anticipos / excedente</div>';
-      stats.insertBefore(card,document.getElementById('dashCount')?.parentElement||null);
-    }
-    return card;
-  }
-
-  window.renderDashboard=function(){
-    const sel=document.getElementById('dashPeriod');
-    if(sel)sel.value=dashPeriodValue;
-    const range=dashRange();
-    const start=range.start,end=range.end;
-    const inPaidRange=p=>p.paidDate&&(!start||p.paidDate>=start)&&(!end||p.paidDate<=end);
-    const inPayrollRange=x=>(!start||x.end>=start)&&(!end||x.start<=end);
-    const paid=(db.payments||[]).filter(p=>p.status!=='void'&&inPaidRange(p));
-    const payrolls=Object.values(db.payrollPeriods||{}).filter(inPayrollRange);
-    const generatedByEmp={};
-    payrolls.forEach(period=>(period.snapshot?.employees||[]).forEach(item=>{
-      generatedByEmp[item.employeeId]=(generatedByEmp[item.employeeId]||0)+Number(item.amount||0);
-    }));
-    const paidByEmp={};
-    paid.forEach(p=>{paidByEmp[p.employeeId]=(paidByEmp[p.employeeId]||0)+Number(p.amount||0);});
-    const employeeIds=new Set([...Object.keys(generatedByEmp),...Object.keys(paidByEmp)]);
-    let generated=0,applied=0,excess=0,pending=0;
-    employeeIds.forEach(id=>{
-      const g=generatedByEmp[id]||0;
-      const p=paidByEmp[id]||0;
-      generated+=g;
-      applied+=Math.min(g,p);
-      excess+=Math.max(p-g,0);
-      pending+=Math.max(g-p,0);
-    });
-
-    document.getElementById('dashTotal').textContent='$'+applied.toFixed(2);
-    document.getElementById('dashTotal').nextElementSibling.textContent='Pagado aplicado a nómina';
-    document.getElementById('dashGenerated').textContent='$'+generated.toFixed(2);
-    document.getElementById('dashPending').textContent='$'+pending.toFixed(2);
-    document.getElementById('dashPending').nextElementSibling.textContent='Saldo pendiente';
-    document.getElementById('dashCount').textContent=paid.length;
-    ensureExcessStat();
-    const excessEl=document.getElementById('dashExcess');
-    if(excessEl)excessEl.textContent='$'+excess.toFixed(2);
-
-    const buckets=dashboardBuckets(start,end);
-    const vals=buckets.map(b=>paid.filter(p=>p.paidDate>=b.start&&p.paidDate<=b.end).reduce((a,p)=>a+Number(p.amount||0),0));
-    const max=Math.max(...vals,0);
-    document.getElementById('dashChartLabel').textContent=start?`${start} a ${end}`:'Agrupado por mes según fecha de pago';
-    const chart=document.getElementById('dashChart');
-    chart.innerHTML=!vals.length?'<div class="chart-empty">Selecciona un periodo para visualizar los pagos.</div>':vals.every(v=>v===0)?'<div class="chart-empty">No hay pagos registrados en este periodo.</div>':buckets.map((b,i)=>`<div class="chart-bar-group"><div class="chart-bar-value">${moneyShort(vals[i])}</div><div class="chart-bar" style="height:${Math.max(2,(vals[i]/max)*180)}px" title="$${vals[i].toFixed(2)}"></div><div class="chart-bar-label">${b.label.replace("\n","<br>")}</div></div>`).join('');
-
-    const rows=(db.employees||[]).map(e=>{
-      const g=generatedByEmp[e.id]||0,p=paidByEmp[e.id]||0;
-      return {name:e.name,generated:g,applied:Math.min(g,p),pending:Math.max(g-p,0),excess:Math.max(p-g,0)};
-    }).filter(r=>r.generated||r.applied||r.excess).sort((a,b)=>(b.pending+b.excess)-(a.pending+a.excess));
-    document.getElementById('dashByEmp').innerHTML=rows.length?`<h3 style="margin-bottom:6px">Resumen por trabajador</h3><table><thead><tr><th>Trabajador</th><th>Nómina</th><th>Aplicado</th><th>Pendiente</th><th>Anticipo</th></tr></thead><tbody>${rows.map(r=>`<tr><td>${esc(r.name)}</td><td>$${r.generated.toFixed(2)}</td><td>$${r.applied.toFixed(2)}</td><td>$${r.pending.toFixed(2)}</td><td>$${r.excess.toFixed(2)}</td></tr>`).join('')}</tbody></table>`:'';
-  };
-
-  try{localStorage.setItem(STORE,JSON.stringify(db));}catch(e){console.warn('No se pudo limpiar el estado de pagos duplicado',e);}
-  if(typeof renderAdmin==='function')renderAdmin();
-  window.dispatchEvent(new CustomEvent('panorama-core-personal-ready'));
+  /* Estado compartido entre dispositivos. La UI y la lógica existente no se modifican. */
+  const ENDPOINT='https://dtmhffgpwxzdncbuoohb.supabase.co/functions/v1/panorama-personal-sync-v2';
+  const APIKEY='sb_publishable_S_wZkfLNvx0mnHBLGHcfgg_Q_SkycdW';
+  const H={'Content-Type':'application/json','apikey':APIKEY,'Authorization':'Bearer '+APIKEY};
+  let last=JSON.stringify(db),remote='',applying=false,busy=false,started=false;
+  async function syncApi(method,body){const r=await fetch(ENDPOINT,{method,headers:H,cache:'no-store',body:body?JSON.stringify(body):undefined});const t=await r.text();if(!r.ok)throw Error(method+' '+r.status+' '+t);return t?JSON.parse(t):null;}
+  async function upload(){const state=JSON.parse(JSON.stringify(db));await syncApi('POST',{data:{__panorama_sync:true,key:STORE,data:state}});last=JSON.stringify(db);remote=last;}
+  function unpack(row){return row?.data?.__panorama_sync?row.data:null;}
+  async function startSharedSync(){try{const row=await syncApi('GET');const p=unpack(row);if(p?.data){const incoming=JSON.stringify(p.data);if(incoming!==last){applying=true;db=loadFromRemote(p.data);localStorage.setItem(STORE,JSON.stringify(db));last=JSON.stringify(db);remote=last;applying=false;renderAll();}else remote=incoming;}else await upload();}catch(e){console.warn('Panorama Personal sincronización offline',e);}started=true;}
+  function loadFromRemote(data){const base=blankDB();return {...base,...data,employees:Array.isArray(data.employees)?data.employees:[],sessions:Array.isArray(data.sessions)?data.sessions:[],payments:Array.isArray(data.payments)?data.payments:[],approvals:data.approvals&&typeof data.approvals==='object'?data.approvals:{},weekFinalizations:data.weekFinalizations&&typeof data.weekFinalizations==='object'?data.weekFinalizations:{},payrollPeriods:data.payrollPeriods&&typeof data.payrollPeriods==='object'?data.payrollPeriods:{},adminPin:/^\d{4}$/.test(String(data.adminPin||''))?String(data.adminPin):'1234'};}
+  async function tickShared(){if(!started||busy||applying)return;busy=true;try{const now=JSON.stringify(db);if(now!==last){if(navigator.onLine){await upload();}else localStorage.setItem('__panorama_personal_pending_sync',now);}if(navigator.onLine){const row=await syncApi('GET');const p=unpack(row);if(p?.data){const incoming=JSON.stringify(p.data);if(incoming!==remote&&incoming!==JSON.stringify(db)){applying=true;db=loadFromRemote(p.data);localStorage.setItem(STORE,JSON.stringify(db));last=JSON.stringify(db);remote=last;applying=false;renderAll();}else remote=incoming;}}}catch(e){console.warn('Panorama Personal pendiente de sincronizar',e);}finally{busy=false;}}
+  window.addEventListener('online',tickShared);window.addEventListener('focus',tickShared);document.addEventListener('visibilitychange',()=>{if(!document.hidden)tickShared();});setInterval(tickShared,2500);startSharedSync();
 })();
