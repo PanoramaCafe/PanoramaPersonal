@@ -1,15 +1,12 @@
-# Panorama Café — Personal
+# Panorama Personal V1.14
 
-Aplicación de control de personal, asistencia y nómina.
+Aplicación web/PWA para control de personal, asistencia, jornadas, nómina y pagos de Panorama Café.
 
-## Archivos para GitHub Pages
+## Archivos
+- index.html — aplicación principal
+- manifest.json — configuración PWA
+- service-worker.js — caché y funcionamiento offline
+- README.md — información del proyecto
 
-Sube el contenido de esta carpeta a la raíz del repositorio:
-
-- index.html
-- manifest.json
-- service-worker.js
-
-Después activa GitHub Pages desde la rama principal (`main`) y la carpeta raíz (`/root`).
-
-La aplicación funciona en línea y conserva una copia de la interfaz para uso sin conexión después de la primera carga.
+## Publicación en GitHub Pages
+Sube todos los archivos de esta carpeta a la raíz del repositorio y activa GitHub Pages.

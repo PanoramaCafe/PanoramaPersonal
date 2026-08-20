@@ -1,4 +1,4 @@
-const CACHE_NAME="panorama-personal-v1-8-1";
+const CACHE_NAME="panorama-personal-v1-14";
 const APP_SHELL=["./","./index.html","./manifest.json"];
 
 self.addEventListener("install",event=>{

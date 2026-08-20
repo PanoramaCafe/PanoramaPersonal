@@ -78,13 +78,14 @@ tfoot td{font-weight:900}
 .admin-drawer summary:before{content:"⚙️ ";}.admin-drawer summary:after{content:" ▾";float:right}
 
 
+.payroll-chart{display:flex;align-items:flex-end;gap:10px;min-height:240px;margin-top:12px;padding:16px 8px 0;border-bottom:1px solid var(--line);overflow-x:auto}.chart-bar-group{min-width:58px;flex:1;max-width:110px;display:flex;flex-direction:column;align-items:center;justify-content:flex-end;height:220px}.chart-bar-value{font-size:12px;font-weight:800;margin-bottom:5px;white-space:nowrap}.chart-bar{width:min(54px,75%);min-height:2px;background:#2d2926;border-radius:8px 8px 0 0;transition:height .2s}.chart-bar-label{font-size:11px;text-align:center;margin-top:7px;line-height:1.2;color:#666;min-height:28px}.chart-empty{padding:35px 10px;color:#777;text-align:center;border:1px dashed var(--line);border-radius:10px;margin-top:12px}
 </style>
   <link rel="manifest" href="manifest.json">
   <meta name="theme-color" content="#2d2926">
   <meta name="apple-mobile-web-app-capable" content="yes">
   <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
   <meta name="apple-mobile-web-app-title" content="Panorama Personal">
-<!-- PANORAMA PERSONAL · V1.8.1 PWA -->
+<!-- PANORAMA PERSONAL · V1.13 PWA -->
 </head>
 <body><div class="app">
 <header class="header">
@@ -137,13 +138,20 @@ tfoot td{font-weight:900}
   <div class="card">
     <div style="display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:8px">
       <h2 style="margin:0">📊 Resumen de nómina</h2>
-      <select id="dashPeriod" onchange="onDashPeriodChange()" style="width:auto"><option value="all">Todo el tiempo</option><option value="month">Este mes</option><option value="quarter">Últimos 3 meses</option><option value="year">Este año</option></select>
+      <select id="dashPeriod" onchange="onDashPeriodChange()" style="width:auto">
+        <option value="week">Esta semana</option><option value="month">Este mes</option><option value="custom">Personalizado</option><option value="all">Todo el tiempo</option>
+      </select>
     </div>
+    <div id="dashCustomRange" class="hidden" style="margin-top:10px"><div class="form-grid"><div><label>Desde</label><input type="date" id="dashStart" onchange="renderDashboard()"></div><div><label>Hasta</label><input type="date" id="dashEnd" onchange="renderDashboard()"></div></div></div>
     <div class="stats" style="margin-top:12px">
-      <div class="stat"><div class="num" id="dashTotal">$0.00</div><div class="muted">Total pagado</div></div>
+      <div class="stat"><div class="num" id="dashTotal">$0.00</div><div class="muted">Nómina pagada</div></div>
+      <div class="stat"><div class="num" id="dashGenerated">$0.00</div><div class="muted">Nómina generada</div></div>
+      <div class="stat"><div class="num" id="dashPending">$0.00</div><div class="muted">Pendiente de pago</div></div>
       <div class="stat"><div class="num" id="dashCount">0</div><div class="muted">Pagos registrados</div></div>
     </div>
-    <div id="dashByEmp" style="margin-top:10px"></div>
+    <h3 style="margin:18px 0 6px">📊 Pagos de nómina</h3><div class="muted" id="dashChartLabel"></div>
+    <div id="dashChart" class="payroll-chart"></div>
+    <div id="dashByEmp" style="margin-top:16px"></div>
   </div>
 
   <div class="card">
@@ -170,7 +178,7 @@ tfoot td{font-weight:900}
   <div class="card">
     <h2 style="margin-top:0">💳 Pagos</h2>
     <div class="muted">Fecha hasta la que se le pagó a cada quien, y lo que tiene pendiente desde entonces.</div>
-    <div id="paymentsSummary" style="margin-top:8px"></div>
+    <div id="payrollPaymentQueue" style="margin-top:8px"></div><div id="paymentsSummary" style="margin-top:14px"></div>
     <h3 style="margin-bottom:2px">Historial de pagos</h3>
     <label>Filtrar por trabajador</label><select id="paymentsEmpFilter" onchange="onPaymentsFilterChange()"></select>
     <div id="paymentsHistory" style="margin-top:8px"></div>
@@ -196,7 +204,7 @@ tfoot td{font-weight:900}
 
 <div id="modal" class="modal hidden"><div class="modalbox" id="modalBox"></div></div>
 <div id="toast"></div>
-<footer class="muted" style="text-align:center;padding:18px;font-size:12px">Panorama Café · Personal V1.6 · Datos guardados en este dispositivo</footer>
+<footer class="muted" style="text-align:center;padding:18px;font-size:12px">Panorama Café · Personal V1.14 · Datos guardados en este dispositivo</footer>
 </div>
 
 <script>
@@ -208,13 +216,13 @@ function esc(s){return String(s??"").replace(/[&<>"']/g,c=>({"&":"&amp;","<":"&l
 function fmtTime(iso){return new Date(iso).toLocaleTimeString("es-MX",{hour:"2-digit",minute:"2-digit"})}
 function fmtDateShort(d){return d.toLocaleDateString("es-MX",{day:"2-digit",month:"short"})}
 
-function blankDB(){return {employees:[],sessions:[],payments:[],approvals:{},adminPin:"0000"}}
+function blankDB(){return {employees:[],sessions:[],payments:[],approvals:{},weekFinalizations:{},payrollPeriods:{},adminPin:"1234"}}
 function load(){
   try{
     const saved=localStorage.getItem(STORE);
     if(saved){
       const data=JSON.parse(saved),base=blankDB();
-      return {...base,...data,employees:Array.isArray(data.employees)?data.employees:[],sessions:Array.isArray(data.sessions)?data.sessions:[],payments:Array.isArray(data.payments)?data.payments:[],approvals:(data.approvals&&typeof data.approvals==="object")?data.approvals:{},adminPin:data.adminPin||"0000"};
+      return {...base,...data,employees:Array.isArray(data.employees)?data.employees:[],sessions:Array.isArray(data.sessions)?data.sessions:[],payments:Array.isArray(data.payments)?data.payments:[],approvals:(data.approvals&&typeof data.approvals==="object")?data.approvals:{},weekFinalizations:(data.weekFinalizations&&typeof data.weekFinalizations==="object")?data.weekFinalizations:{},payrollPeriods:(data.payrollPeriods&&typeof data.payrollPeriods==="object")?data.payrollPeriods:{},adminPin:/^\d{4}$/.test(String(data.adminPin||""))?String(data.adminPin):"1234"};
     }
   }catch(e){console.warn("No se pudo leer la base local",e)}
   return blankDB();
@@ -317,7 +325,7 @@ function doClock(emp){
     save();
     showToast(`Hasta luego, ${emp.name}. Salida ${fmtTime(open.salida)} · ${hrs.toFixed(1)} h`);
   }else{
-    db.sessions.unshift({id:crypto.randomUUID(),employeeId:emp.id,entrada:now.toISOString(),salida:null});
+    db.sessions.unshift({id:crypto.randomUUID(),employeeId:emp.id,entrada:now.toISOString(),salida:null,rateAtEntry:Number(emp.rate)});
     save();
     showToast(`Hola, ${emp.name}. Entrada registrada ${fmtTime(now.toISOString())}`);
   }
@@ -352,7 +360,7 @@ function renderClock(){
 function openAdmin(){
   openPinPad("Administración","Ingresa el PIN de administrador",(pin)=>{
     if(pin!==db.adminPin)return false;
-    closeModal();showView("reloj");return true;
+    closeModal();showView("admin");return true;
   });
 }
 function changeAdminPin(){
@@ -382,6 +390,8 @@ function saveEmployee(id){
 }
 function deactivateEmployee(id){
   const e=db.employees.find(x=>x.id===id);if(!e)return;
+  const open=db.sessions.some(s=>s.employeeId===id&&!s.salida);
+  if(open){alert("No se puede desactivar a este trabajador porque tiene una jornada abierta. Registra o corrige primero su salida.");return;}
   if(!confirm(`¿Desactivar a ${e.name}? Ya no aparecerá en el reloj, pero su historial se conserva.`))return;
   e.active=false;closeModal();save();
 }
@@ -413,6 +423,18 @@ function hoursOf(s){
   if(!s.entrada || !s.salida) return 0;
   return Math.max(0,(new Date(s.salida)-new Date(s.entrada))/3600000);
 }
+function sessionRate(s){
+  if(Number.isFinite(Number(s.rateAtEntry)) && Number(s.rateAtEntry)>0) return Number(s.rateAtEntry);
+  const emp=db.employees.find(e=>e.id===s.employeeId);
+  return Number(emp?.rate)||0;
+}
+function sessionPay(s){return hoursOf(s)*sessionRate(s)}
+
+function computeAmountInRange(employeeId,startKey,endKey){
+  return db.sessions.filter(s=>s.employeeId===employeeId).filter(s=>{
+    const k=localDateKey(new Date(s.entrada));return k>=startKey&&k<=endKey;
+  }).reduce((a,s)=>a+(sessionCountsForPayroll(s)?sessionPay(s):0),0);
+}
 function sessionStatus(s){
   if(!s.entrada) return {key:"invalid",label:"Inválida",icon:"⚠️"};
   if(!s.salida) return {key:"open",label:"Incompleta",icon:"🔴"};
@@ -426,6 +448,13 @@ function isPendingSession(s){
   return st.key==="open" || st.key==="suspicious" || st.key==="critical";
 }
 function sessionIsApproved(s){return db.approvals?.[String(s.id)]?.status==="approved";}
+function requiresReview(s){return isPendingSession(s)&&!sessionIsApproved(s);}
+function sessionCountsForPayroll(s){
+  const st=sessionStatus(s);
+  if(st.key==="normal") return true;
+  if(st.key==="suspicious" || st.key==="critical") return sessionIsApproved(s);
+  return false;
+}
 function approveSession(id){
   const s=db.sessions.find(x=>x.id===id);if(!s)return;
   if(sessionStatus(s).key==="open"){alert("Primero corrige la salida de esta sesión.");return}
@@ -434,54 +463,103 @@ function approveSession(id){
 }
 function weekPendingSessions(){
   const {start,end}=currentWeekRange();
-  return sessionsInRange(start,end).filter(isPendingSession);
+  return sessionsInRange(start,end).filter(requiresReview);
+}
+function payrollPeriodKey(start){return localDateKey(start)}
+function buildPayrollSnapshot(start,end){
+  const sessions=sessionsInRange(start,end).filter(sessionCountsForPayroll);
+  const employees=db.employees.map(e=>{
+    const list=sessions.filter(s=>s.employeeId===e.id);
+    const hours=list.reduce((a,s)=>a+hoursOf(s),0);
+    const amount=list.reduce((a,s)=>a+sessionPay(s),0);
+    return {employeeId:e.id,name:e.name,hours,amount,sessionIds:list.map(s=>s.id)};
+  }).filter(x=>x.hours>0);
+  return {employees,totalHours:employees.reduce((a,x)=>a+x.hours,0),totalAmount:employees.reduce((a,x)=>a+x.amount,0)};
 }
 function finalizeCurrentWeek(){
   const pending=weekPendingSessions();
   if(pending.length){alert(`No se puede finalizar la nómina: hay ${pending.length} registro(s) pendientes de revisión.`);return}
-  const {start,end}=currentWeekRange();
-  if(confirm(`¿Confirmar que la semana ${fmtDateShort(start)} – ${fmtDateShort(new Date(end-1))} está revisada y lista para pago?`))showToast("Nómina revisada y lista para pago");
+  const {start,end}=currentWeekRange(),key=payrollPeriodKey(start);
+  db.payrollPeriods=db.payrollPeriods||{};
+  const existing=db.payrollPeriods[key];
+  if(existing?.status==="paid"){alert("Este periodo ya está marcado como pagado. No se puede volver a finalizar.");return}
+  const snapshot=buildPayrollSnapshot(start,end);
+  if(confirm(`¿Confirmar la nómina del ${fmtDateShort(start)} al ${fmtDateShort(new Date(end-1))}?\n\nSe guardará una fotografía de ${snapshot.employees.length} trabajador(es), ${snapshot.totalHours.toFixed(1)} horas y $${snapshot.totalAmount.toFixed(2)}.`)){
+    db.weekFinalizations=db.weekFinalizations||{};
+    db.weekFinalizations[key]={status:"finalized",finalizedAt:new Date().toISOString()};
+    db.payrollPeriods[key]={id:key,start:localDateKey(start),end:localDateKey(new Date(end-1)),status:"finalized",finalizedAt:new Date().toISOString(),snapshot};
+    save();showToast("Periodo de nómina finalizado y guardado");
+  }
 }
 function renderPayroll(){
   const {start,end}=currentWeekRange();
-  const inRange=sessionsInRange(start,end);
-  const pending=inRange.filter(isPendingSession);
+  const inRange=sessionsInRange(start,end),pending=inRange.filter(requiresReview);
   const box=document.getElementById("payrollAlerts");
   if(box) box.innerHTML=pending.length?`<div class="notice warning"><b>⚠️ ${pending.length} registro(s) requieren revisión.</b><br>Las sesiones sin salida o con más de 10 horas no se contabilizan hasta ser corregidas o aprobadas.</div>`:"";
-  document.getElementById("weekLabel").textContent=`${fmtDateShort(start)} – ${fmtDateShort(new Date(end-1))}`;
-  const rows=db.employees.map(e=>{
-    const s=inRange.filter(x=>x.employeeId===e.id);
-    const hours=s.reduce((a,x)=>a+(isPendingSession(x)&&!sessionIsApproved(x)?0:hoursOf(x)),0);
-    const pending=s.some(x=>isPendingSession(x)&&!sessionIsApproved(x));
-    return {name:e.name,rate:e.rate,hours,pay:hours*e.rate,pending};
+  const weekKey=payrollPeriodKey(start),period=db.payrollPeriods?.[weekKey];
+  document.getElementById("weekLabel").textContent=`${fmtDateShort(start)} – ${fmtDateShort(new Date(end-1))}${period?(period.status==="paid"?" · ✓ Pagada":period.status==="partial"?" · ◐ Pago parcial":" · ✓ Finalizada"):""}`;
+  const rows=period?.snapshot?.employees || db.employees.map(e=>{
+    const list=inRange.filter(x=>x.employeeId===e.id),hours=list.reduce((a,x)=>a+(sessionCountsForPayroll(x)?hoursOf(x):0),0),pay=list.reduce((a,x)=>a+(sessionCountsForPayroll(x)?sessionPay(x):0),0);
+    return {employeeId:e.id,name:e.name,hours,amount:pay,pending:list.some(x=>isPendingSession(x)&&!sessionIsApproved(x))};
   }).filter(r=>r.hours>0||db.employees.length);
-  const total=rows.reduce((a,r)=>a+r.pay,0);
-  document.getElementById("payrollTable").innerHTML=`<thead><tr><th>Trabajador</th><th>Horas aprobadas</th><th>Tarifa</th><th>Pago</th></tr></thead>
-  <tbody>${rows.length?rows.map(r=>`<tr><td>${esc(r.name)}</td><td>${r.hours.toFixed(1)}${r.pending?" ⚠️":""}</td><td>$${r.rate}/h</td><td>$${r.pay.toFixed(2)}</td></tr>`).join(""):"<tr><td colspan='4' class='empty'>Sin trabajadores</td></tr>"}</tbody>
-  <tfoot><tr><td colspan="3">Total semana</td><td>$${total.toFixed(2)}</td></tr></tfoot>`;
+  const total=period?.snapshot?.totalAmount ?? rows.reduce((a,r)=>a+(r.amount||0),0);
+  document.getElementById("payrollTable").innerHTML=`<thead><tr><th>Trabajador</th><th>Horas aprobadas</th><th>Tarifa prom.</th><th>Pago</th></tr></thead><tbody>${rows.length?rows.map(r=>{const rate=r.hours>0?r.amount/r.hours:0;return `<tr><td>${esc(r.name)}</td><td>${r.hours.toFixed(1)}${r.pending?" ⚠️":""}</td><td>$${rate.toFixed(2)}/h</td><td>$${r.amount.toFixed(2)}</td></tr>`}).join(""):"<tr><td colspan='4' class='empty'>Sin trabajadores</td></tr>"}</tbody><tfoot><tr><td colspan="3">Total semana</td><td>$${total.toFixed(2)}</td></tr></tfoot>`;
 }
 
-/* ---------- Dashboard de nómina ---------- */
-let dashPeriodValue="all";
-function onDashPeriodChange(){dashPeriodValue=document.getElementById("dashPeriod").value;renderDashboard()}
-function renderDashboard(){
-  const sel=document.getElementById("dashPeriod");if(sel)sel.value=dashPeriodValue;
-  const now=new Date();
-  let startKey=null;
-  if(dashPeriodValue==="month")startKey=localDateKey(new Date(now.getFullYear(),now.getMonth(),1));
-  else if(dashPeriodValue==="quarter"){const d=new Date(now);d.setMonth(d.getMonth()-3);startKey=localDateKey(d);}
-  else if(dashPeriodValue==="year")startKey=localDateKey(new Date(now.getFullYear(),0,1));
-  const filtered=db.payments.filter(p=>!startKey||p.paidDate>=startKey);
-  const total=filtered.reduce((a,p)=>a+Number(p.amount),0);
-  document.getElementById("dashTotal").textContent="$"+total.toFixed(2);
-  document.getElementById("dashCount").textContent=filtered.length;
-  const byEmp={};
-  filtered.forEach(p=>{byEmp[p.employeeId]=(byEmp[p.employeeId]||0)+Number(p.amount)});
-  const rows=db.employees.map(e=>({name:e.name,total:byEmp[e.id]||0})).sort((a,b)=>b.total-a.total);
-  document.getElementById("dashByEmp").innerHTML=rows.length?`<table><thead><tr><th>Trabajador</th><th>Total pagado</th></tr></thead><tbody>${rows.map(r=>`<tr><td>${esc(r.name)}</td><td>$${r.total.toFixed(2)}</td></tr>`).join("")}</tbody></table>`:"<div class='empty'>Aún no hay pagos registrados.</div>";
-}
+/* ---------- Dashboard de nómina y gráfica ---------- */
+let dashPeriodValue="month";
+function onDashPeriodChange(){dashPeriodValue=document.getElementById("dashPeriod").value;const c=document.getElementById("dashCustomRange");if(c)c.classList.toggle("hidden",dashPeriodValue!=="custom");renderDashboard()}
+function dashRange(){const now=new Date();let start=null,end=localDateKey(now);if(dashPeriodValue==="week"){const d=new Date(now);d.setDate(d.getDate()-((d.getDay()+6)%7));start=localDateKey(d);const e=new Date(d);e.setDate(e.getDate()+6);end=localDateKey(e)}else if(dashPeriodValue==="month")start=localDateKey(new Date(now.getFullYear(),now.getMonth(),1));else if(dashPeriodValue==="custom"){start=document.getElementById("dashStart")?.value||null;end=document.getElementById("dashEnd")?.value||end}return {start,end}}
+function moneyShort(n){n=Number(n)||0;return n>=1000?"$"+(n/1000).toFixed(n>=10000?0:1)+"k":"$"+n.toFixed(0)}
+function dashboardBuckets(start,end){const buckets=[];if(!start||!end)return buckets;const a=new Date(start+"T12:00:00"),b=new Date(end+"T12:00:00");if(dashPeriodValue==="week"||dashPeriodValue==="month"||dashPeriodValue==="custom"){for(let d=new Date(a);d<=b;d.setDate(d.getDate()+7)){const bs=localDateKey(d),be=new Date(d);be.setDate(be.getDate()+6);buckets.push({key:bs,start:bs,end:localDateKey(be),label:bs.slice(5)})}}else{const months=new Map();db.payments.forEach(p=>months.set(p.paidDate.slice(0,7),true));return [...months.keys()].sort().map(k=>({key:k,start:k+"-01",end:k+"-31",label:k.slice(0,4)+"\n"+k.slice(5)}))}return buckets}
+function renderDashboard(){const sel=document.getElementById("dashPeriod");if(sel)sel.value=dashPeriodValue;const {start,end}=dashRange();const inRange=p=>p.paidDate&&(!start||p.paidDate>=start)&&(!end||p.paidDate<=end);const paid=db.payments.filter(inRange);const total=paid.reduce((a,p)=>a+Number(p.amount||0),0);const generated=Object.values(db.payrollPeriods||{}).filter(x=>(!start||x.end>=start)&&(!end||x.start<=end)).reduce((a,x)=>a+Number(x.snapshot?.totalAmount||0),0);document.getElementById("dashTotal").textContent="$"+total.toFixed(2);document.getElementById("dashGenerated").textContent="$"+generated.toFixed(2);document.getElementById("dashPending").textContent="$"+Math.max(0,generated-total).toFixed(2);document.getElementById("dashCount").textContent=paid.length;const buckets=dashboardBuckets(start,end);const vals=buckets.map(b=>paid.filter(p=>p.paidDate>=b.start&&p.paidDate<=b.end).reduce((a,p)=>a+Number(p.amount||0),0));const max=Math.max(...vals,0);document.getElementById("dashChartLabel").textContent=start?`${start} a ${end}`:"Agrupado por mes según fecha de pago";const chart=document.getElementById("dashChart");chart.innerHTML=!vals.length?'<div class="chart-empty">Selecciona un periodo para visualizar los pagos.</div>':vals.every(v=>v===0)?'<div class="chart-empty">No hay pagos de nómina registrados en este periodo.</div>':buckets.map((b,i)=>`<div class="chart-bar-group"><div class="chart-bar-value">${moneyShort(vals[i])}</div><div class="chart-bar" style="height:${Math.max(2,(vals[i]/max)*180)}px" title="$${vals[i].toFixed(2)}"></div><div class="chart-bar-label">${b.label.replace("\n","<br>")}</div></div>`).join("");const byEmp={};paid.forEach(p=>{byEmp[p.employeeId]=(byEmp[p.employeeId]||0)+Number(p.amount||0)});const rows=db.employees.map(e=>({name:e.name,total:byEmp[e.id]||0})).filter(r=>r.total>0).sort((a,b)=>b.total-a.total);document.getElementById("dashByEmp").innerHTML=rows.length?`<h3 style="margin-bottom:6px">Pagado por trabajador</h3><table><thead><tr><th>Trabajador</th><th>Total pagado</th></tr></thead><tbody>${rows.map(r=>`<tr><td>${esc(r.name)}</td><td>$${r.total.toFixed(2)}</td></tr>`).join("")}</tbody></table>`:""}
 
 /* ---------- Pagos ---------- */
+function payrollPaymentRecords(periodId,employeeId){return db.payments.filter(p=>p.payrollPeriodId===periodId&&p.employeeId===employeeId)}
+function payrollEmployeePaid(periodId,employeeId){return payrollPaymentRecords(periodId,employeeId).some(p=>p.status!=="void")}
+function updatePayrollPeriodPaymentStatus(periodId){
+  const period=db.payrollPeriods?.[periodId];if(!period?.snapshot?.employees)return;
+  const allPaid=period.snapshot.employees.every(x=>payrollEmployeePaid(periodId,x.employeeId));
+  const anyPaid=period.snapshot.employees.some(x=>payrollEmployeePaid(periodId,x.employeeId));
+  period.status=allPaid?"paid":(anyPaid?"partial":"finalized");
+  if(allPaid&&!period.paidAt)period.paidAt=new Date().toISOString();
+  if(!allPaid)delete period.paidAt;
+}
+function renderPayrollPaymentQueue(){
+  const box=document.getElementById("payrollPaymentQueue");if(!box)return;
+  const periods=Object.values(db.payrollPeriods||{}).filter(p=>p?.snapshot?.employees?.length).sort((a,b)=>b.start.localeCompare(a.start));
+  if(!periods.length){box.innerHTML='<div class="empty">No hay periodos de nómina finalizados para pagar.</div>';return}
+  box.innerHTML=`<h3 style="margin-bottom:4px">Nóminas finalizadas</h3>${periods.map(period=>{
+    const pending=period.snapshot.employees.filter(x=>!payrollEmployeePaid(period.id,x.employeeId));
+    const paid=period.snapshot.employees.length-pending.length;
+    const status=period.status==="paid"?"✓ Pagada":period.status==="partial"?"◐ Parcialmente pagada":"○ Pendiente de pago";
+    return `<div class="item"><b>${esc(period.start)} – ${esc(period.end)}</b> · ${status}<br><span class="muted">${paid}/${period.snapshot.employees.length} trabajadores pagados · Total $${Number(period.snapshot.totalAmount||0).toFixed(2)}</span><div style="margin-top:8px">${period.snapshot.employees.map(x=>{const done=payrollEmployeePaid(period.id,x.employeeId);return `<div style="display:flex;justify-content:space-between;gap:8px;align-items:center;padding:5px 0"><span>${esc(x.name)} · ${Number(x.hours||0).toFixed(1)} h · <b>$${Number(x.amount||0).toFixed(2)}</b>${done?" · ✓ Pagado":""}</span>${done?`<button onclick="openExistingPayrollPayment('${period.id}','${x.employeeId}')">Ver pago</button>`:`<button class="primary" onclick="openPayrollPaymentForm('${period.id}','${x.employeeId}')">Registrar pago</button>`}</div>`}).join("")}</div></div>`}).join("")}`;
+}
+function openPayrollPaymentForm(periodId,employeeId,paymentId=null){
+  const period=db.payrollPeriods?.[periodId],emp=db.employees.find(e=>e.id===employeeId);if(!period||!emp)return;
+  const line=period.snapshot.employees.find(x=>x.employeeId===employeeId);if(!line)return;
+  const existing=paymentId?db.payments.find(p=>p.id===paymentId):null;
+  const already=payrollPaymentRecords(periodId,employeeId).find(p=>p.id!==paymentId);
+  if(already){openExistingPayrollPayment(periodId,employeeId);return}
+  payFormEmployeeId=employeeId;payFormId=paymentId;window.payFormPayrollPeriodId=periodId;
+  openModal(`<div class="modalhead"><div><h2 style="margin:0">Registrar pago de nómina</h2><div class="muted">${esc(period.start)} al ${esc(period.end)}</div></div><button class="close" onclick="closeModal()">✕</button></div>
+  <div class="notice">${esc(line.name)} · ${Number(line.hours||0).toFixed(1)} horas · <b>$${Number(line.amount||0).toFixed(2)}</b></div>
+  <label>Monto a pagar (MXN)</label><input id="payAmount" type="number" min="0" step="0.01" value="${Number(existing?.amount??line.amount).toFixed(2)}">
+  <label>Fecha en que se paga</label><input id="payDate" type="date" value="${existing?.paidDate||todayKey()}">
+  <label>Nota (opcional)</label><input id="payNote" value="${esc(existing?.note||"")}">
+  <div class="actions"><button onclick="closeModal()">Cancelar</button>${existing?`<button class="danger" onclick="deletePayment('${existing.id}')">Eliminar</button>`:""}<button class="primary" onclick="savePayrollPeriodPayment()">Guardar pago</button></div>`);
+}
+function openExistingPayrollPayment(periodId,employeeId){const p=payrollPaymentRecords(periodId,employeeId)[0];if(p)openPayrollPaymentForm(periodId,employeeId,p.id)}
+function savePayrollPeriodPayment(){
+  const periodId=window.payFormPayrollPeriodId,period=db.payrollPeriods?.[periodId];if(!period)return;
+  const line=period.snapshot.employees.find(x=>x.employeeId===payFormEmployeeId);if(!line)return;
+  const amount=Number(document.getElementById("payAmount").value),paidDate=document.getElementById("payDate").value,note=document.getElementById("payNote").value;
+  if(!amount||!paidDate){alert("Completa el monto y la fecha de pago.");return}
+  const payload={employeeId:payFormEmployeeId,periodStart:period.start,periodEnd:period.end,amount,paidDate,note,payrollPeriodId:periodId,payrollSnapshotAmount:Number(line.amount||0),source:"payroll"};
+  if(payFormId)Object.assign(db.payments.find(x=>x.id===payFormId),payload);else db.payments.unshift({id:crypto.randomUUID(),...payload});
+  updatePayrollPeriodPaymentStatus(periodId);window.payFormPayrollPeriodId=null;closeModal();save();showToast("Pago de nómina registrado");
+}
+
 function addDaysKey(dateKey,n){const d=new Date(dateKey+"T00:00:00");d.setDate(d.getDate()+n);return localDateKey(d)}
 function lastPaidThrough(employeeId,excludeId=null){
   const pays=db.payments.filter(p=>p.employeeId===employeeId&&p.id!==excludeId);
@@ -491,7 +569,7 @@ function lastPaidThrough(employeeId,excludeId=null){
 function computeHoursInRange(employeeId,startKey,endKey){
   return db.sessions.filter(s=>s.employeeId===employeeId).filter(s=>{
     const k=localDateKey(new Date(s.entrada));return k>=startKey&&k<=endKey;
-  }).reduce((a,s)=>a+hoursOf(s),0);
+  }).reduce((a,s)=>a+(sessionCountsForPayroll(s)?hoursOf(s):0),0);
 }
 function earliestSessionKey(employeeId){
   const list=db.sessions.filter(s=>s.employeeId===employeeId);
@@ -502,11 +580,12 @@ function pendingSummary(e){
   const through=lastPaidThrough(e.id);
   const startKey=through?addDaysKey(through,1):earliestSessionKey(e.id);
   const hours=computeHoursInRange(e.id,startKey,todayKey());
-  return {through,startKey,hours,amount:hours*e.rate};
+  return {through,startKey,hours,amount:computeAmountInRange(e.id,startKey,todayKey())};
 }
 let paymentsFilterEmpId="";
 function onPaymentsFilterChange(){paymentsFilterEmpId=document.getElementById("paymentsEmpFilter").value;renderPayments()}
 function renderPayments(){
+  renderPayrollPaymentQueue();
   const box=document.getElementById("paymentsSummary");
   if(!db.employees.length){box.innerHTML="<div class='empty'>No hay trabajadores registrados.</div>";}
   else box.innerHTML=`<table><thead><tr><th>Trabajador</th><th>Pagado hasta</th><th>Horas pend.</th><th>Monto pend.</th><th></th></tr></thead><tbody>${db.employees.map(e=>{
@@ -519,18 +598,18 @@ function renderPayments(){
   const list=db.payments.filter(p=>!paymentsFilterEmpId||p.employeeId===paymentsFilterEmpId).slice().sort((a,b)=>b.paidDate.localeCompare(a.paidDate));
   hist.innerHTML=list.length?list.map(p=>{
     const emp=db.employees.find(e=>e.id===p.employeeId);
-    return `<div class="item"><b>${esc(emp?emp.name:"Trabajador eliminado")}</b> · $${Number(p.amount).toFixed(2)}<br><span class="muted">Cubre del ${esc(p.periodStart)} al ${esc(p.periodEnd)} · pagado el ${esc(p.paidDate)}${p.note?" · "+esc(p.note):""}</span><div class="actions"><button onclick="openPaymentForm('${p.employeeId}','${p.id}')">✏️ Editar</button><button class="danger" onclick="deletePayment('${p.id}')">🗑️ Eliminar</button></div></div>`;
+    return `<div class="item"><b>${esc(emp?emp.name:"Trabajador eliminado")}</b> · $${Number(p.amount).toFixed(2)}${p.source==="payroll"?" · Nómina":""}<br><span class="muted">Cubre del ${esc(p.periodStart)} al ${esc(p.periodEnd)} · pagado el ${esc(p.paidDate)}${p.note?" · "+esc(p.note):""}</span><div class="actions"><button onclick="openPaymentForm('${p.employeeId}','${p.id}')">✏️ Editar</button><button class="danger" onclick="deletePayment('${p.id}')">🗑️ Eliminar</button></div></div>`;
   }).join(""):"<div class='empty'>No hay pagos que coincidan con el filtro.</div>";
 }
 let payFormEmployeeId=null,payFormId=null;
 function openPaymentForm(employeeId,paymentId){
   const emp=db.employees.find(x=>x.id===employeeId);if(!emp)return;
   const p=paymentId?db.payments.find(x=>x.id===paymentId):null;
-  payFormEmployeeId=employeeId;payFormId=paymentId||null;
+  payFormEmployeeId=employeeId;payFormId=paymentId||null;window.payFormPayrollPeriodId=null;
   const through=lastPaidThrough(employeeId,paymentId||null);
   const defStart=p?p.periodStart:(through?addDaysKey(through,1):earliestSessionKey(employeeId));
   const defEnd=p?p.periodEnd:todayKey();
-  const defAmount=p?p.amount:(computeHoursInRange(employeeId,defStart,defEnd)*emp.rate).toFixed(2);
+  const defAmount=p?p.amount:computeAmountInRange(employeeId,defStart,defEnd).toFixed(2);
   const defPaidDate=p?p.paidDate:todayKey();
   const empOptions=db.employees.map(e=>`<option value="${e.id}" ${e.id===employeeId?"selected":""}>${esc(e.name)}</option>`).join("");
   openModal(`<div class="modalhead"><div><h2 style="margin:0">${paymentId?"Editar pago":"Registrar pago"}</h2>${through?`<div class="muted">Pagado hasta ahora: ${esc(through)}</div>`:""}</div><button class="close" onclick="closeModal()">✕</button></div>
@@ -546,7 +625,7 @@ function recalcPayAmount(){
   const start=document.getElementById("payStart").value,end=document.getElementById("payEnd").value;
   if(!start||!end)return;
   const emp=db.employees.find(x=>x.id===payFormEmployeeId);if(!emp)return;
-  document.getElementById("payAmount").value=(computeHoursInRange(payFormEmployeeId,start,end)*emp.rate).toFixed(2);
+  document.getElementById("payAmount").value=computeAmountInRange(payFormEmployeeId,start,end).toFixed(2);
 }
 function savePayment(){
   const employeeId=payFormEmployeeId;
@@ -562,9 +641,9 @@ function savePayment(){
   }
   if(payFormId){Object.assign(db.payments.find(x=>x.id===payFormId),{employeeId,periodStart:start,periodEnd:end,amount,paidDate,note})}
   else db.payments.unshift({id:crypto.randomUUID(),employeeId,periodStart:start,periodEnd:end,amount,paidDate,note});
-  closeModal();save();
+  window.payFormPayrollPeriodId=null;closeModal();save();
 }
-function deletePayment(id){if(!confirm("¿Eliminar este pago del historial?"))return;db.payments=db.payments.filter(x=>x.id!==id);closeModal();save()}
+function deletePayment(id){if(!confirm("¿Eliminar este pago del historial?"))return;const p=db.payments.find(x=>x.id===id);db.payments=db.payments.filter(x=>x.id!==id);if(p?.payrollPeriodId)updatePayrollPeriodPaymentStatus(p.payrollPeriodId);closeModal();save()}
 function exportPaymentsCSV(){
   let csv="Trabajador,Cubre desde,Cubre hasta,Monto,Fecha de pago,Nota\n";
   db.payments.slice().sort((a,b)=>a.paidDate.localeCompare(b.paidDate)).forEach(p=>{
@@ -595,8 +674,16 @@ function saveSession(id){
   const entrada=new Date(inVal).toISOString();
   const salida=outVal?new Date(outVal).toISOString():null;
   if(salida&&new Date(salida)<new Date(entrada)){alert("La salida no puede ser antes de la entrada.");return}
-  if(id){Object.assign(db.sessions.find(x=>x.id===id),{employeeId,entrada,salida})}
-  else db.sessions.unshift({id:crypto.randomUUID(),employeeId,entrada,salida});
+  const otherOpen=db.sessions.some(s=>s.employeeId===employeeId&&!s.salida&&s.id!==id);
+  if(!salida&&otherOpen){alert("Este trabajador ya tiene una jornada abierta. Corrígela antes de crear otra.");return}
+  if(id){
+    const existing=db.sessions.find(x=>x.id===id);
+    const rateAtEntry=(existing.employeeId===employeeId && Number(existing.rateAtEntry)>0)?Number(existing.rateAtEntry):(Number(db.employees.find(e=>e.id===employeeId)?.rate)||0);
+    Object.assign(existing,{employeeId,entrada,salida,rateAtEntry});
+  } else {
+    const rateAtEntry=Number(db.employees.find(e=>e.id===employeeId)?.rate)||0;
+    db.sessions.unshift({id:crypto.randomUUID(),employeeId,entrada,salida,rateAtEntry});
+  }
   closeModal();save();
 }
 function deleteSession(id){if(!confirm("¿Eliminar este registro?"))return;db.sessions=db.sessions.filter(x=>x.id!==id);closeModal();save()}
@@ -619,7 +706,7 @@ function renderSessionList(){
     const emp=db.employees.find(e=>e.id===empId);
     const sessions=groups[key].slice().sort((x,y)=>new Date(x.entrada)-new Date(y.entrada));
     const dayTotal=sessions.reduce((a,s)=>a+hoursOf(s),0);
-    const pending=sessions.some(isPendingSession);
+    const pending=sessions.some(requiresReview);
     const through=lastPaidThrough(empId);
     const paid=through&&dateKey<=through;
     const shifts=sessions.map(s=>{
@@ -627,7 +714,7 @@ function renderSessionList(){
       const duration=s.salida?hoursOf(s).toFixed(1):"0.0";
       return `<div style="padding:5px 0 5px 10px;border-left:2px solid var(--line)">
         ${st.icon} ${fmtTime(s.entrada)} → ${s.salida?fmtTime(s.salida):"sin salida"} · ${duration} h · <b>${st.label}</b>
-        <button onclick="openSessionForm('${s.id}')" style="margin-left:6px;padding:3px 8px;font-size:11px">✏️</button>${isPendingSession(s)&&s.salida?`<button onclick="approveSession('${s.id}')" style="margin-left:4px;padding:3px 8px;font-size:11px">✓ Aprobar</button>`:""}
+        <button onclick="openSessionForm('${s.id}')" style="margin-left:6px;padding:3px 8px;font-size:11px">✏️</button>${requiresReview(s)&&s.salida?`<button onclick="approveSession('${s.id}')" style="margin-left:4px;padding:3px 8px;font-size:11px">✓ Aprobar</button>`:sessionIsApproved(s)?`<span class="tag2" style="margin-left:4px">✓ Revisada y aprobada</span>`:""}
       </div>`;
     }).join("");
     return `<div class="item"><b>${esc(emp?emp.name:"Trabajador eliminado")}</b> · ${esc(dateKey)}
@@ -650,13 +737,15 @@ function exportWeekCSV(){
   let csv="Trabajador,Tarifa,Horas aprobadas,Pago\n";
   db.employees.forEach(e=>{
     const s=inRange.filter(x=>x.employeeId===e.id);
-    const hours=s.reduce((a,x)=>a+hoursOf(x),0);
-    csv+=`${e.name},${e.rate},${hours.toFixed(2)},${(hours*e.rate).toFixed(2)}\n`;
+    const hours=s.reduce((a,x)=>a+(sessionCountsForPayroll(x)?hoursOf(x):0),0);
+    const amount=s.reduce((a,x)=>a+(sessionCountsForPayroll(x)?sessionPay(x):0),0);
+    const effectiveRate=hours>0?amount/hours:e.rate;
+    csv+=`${e.name},${effectiveRate.toFixed(2)},${hours.toFixed(2)},${amount.toFixed(2)}\n`;
   });
   csv+="\nRegistros detallados\nTrabajador,Fecha,Entrada,Salida,Horas aprobadas,Estado\n";
   inRange.forEach(s=>{
     const emp=db.employees.find(e=>e.id===s.employeeId);
-    csv+=`${emp?emp.name:"?"},${localDateKey(new Date(s.entrada))},${fmtTime(s.entrada)},${s.salida?fmtTime(s.salida):"sin salida"},${hoursOf(s).toFixed(2)},${sessionStatus(s).label}\n`;
+    csv+=`${emp?emp.name:"?"},${localDateKey(new Date(s.entrada))},${fmtTime(s.entrada)},${s.salida?fmtTime(s.salida):"sin salida"},${(sessionCountsForPayroll(s)?hoursOf(s):0).toFixed(2)},${sessionStatus(s).label}\n`;
   });
   downloadBlob(csv,`nomina_semana_${localDateKey(start)}.csv`,"text/csv");
 }
@@ -693,133 +782,6 @@ renderAll();
 </script>
 
 
-
-
-<script>
-/* =========================================================
-   V1.8 — Acceso de administrador con pantalla de teclado PIN
-   ========================================================= */
-(function(){
-  const DEFAULT_ADMIN_PIN="1234";
-  const normalizePin=v=>String(v??"").replace(/\D/g,"").slice(0,4);
-  const getAdminPin=()=>{
-    for(const key of ["adminPin","admin_pin","panorama_admin_pin"]){
-      const p=normalizePin(localStorage.getItem(key));
-      if(p.length===4) return p;
-    }
-    return DEFAULT_ADMIN_PIN;
-  };
-
-  function showAdminView(){
-    if(typeof window.showView==="function"){
-      for(const id of ["admin","administracion","personal"]){
-        if(document.getElementById(id)){ window.showView(id); return true; }
-      }
-    }
-    return false;
-  }
-
-  function openAdminKeypad(){
-    const existing=document.getElementById("adminPinScreen");
-    if(existing){
-      existing.style.display="flex";
-      existing.classList.add("active");
-      existing.querySelector("input")?.focus();
-      return;
-    }
-
-    let value="";
-    const overlay=document.createElement("div");
-    overlay.id="adminPinScreen";
-    overlay.className="admin-pin-screen";
-    overlay.innerHTML=`
-      <div class="admin-pin-card">
-        <div class="admin-pin-lock">🔒</div>
-        <h2>Administración</h2>
-        <p>Ingresa el PIN de administrador</p>
-        <div class="admin-pin-dots" aria-label="PIN">${[0,1,2,3].map(()=>'<span></span>').join("")}</div>
-        <div class="admin-keypad">
-          ${[1,2,3,4,5,6,7,8,9].map(n=>`<button type="button" data-key="${n}">${n}</button>`).join("")}
-          <button type="button" data-key="clear">⌫</button>
-          <button type="button" data-key="0">0</button>
-          <button type="button" data-key="cancel">Cancelar</button>
-        </div>
-        <div class="admin-pin-error" aria-live="polite"></div>
-      </div>`;
-    document.body.appendChild(overlay);
-
-    const dots=[...overlay.querySelectorAll(".admin-pin-dots span")];
-    const error=overlay.querySelector(".admin-pin-error");
-    const render=()=>dots.forEach((d,i)=>d.classList.toggle("filled",i<value.length));
-    const close=()=>{ overlay.style.display="none"; value=""; error.textContent=""; render(); };
-
-    overlay.addEventListener("click",e=>{
-      const key=e.target.closest("[data-key]")?.dataset.key;
-      if(!key)return;
-      if(key==="cancel"){close();return;}
-      if(key==="clear"){value=value.slice(0,-1);error.textContent="";render();return;}
-      if(value.length<4){value+=key;error.textContent="";render();}
-      if(value.length===4){
-        setTimeout(()=>{
-          if(value===getAdminPin()){
-            close();
-            if(!showAdminView()) error.textContent="PIN correcto, pero no se encontró Administración.";
-          }else{
-            error.textContent="PIN incorrecto";
-            value=""; render();
-          }
-        },120);
-      }
-    });
-
-    document.addEventListener("keydown",function handler(e){
-      if(overlay.style.display==="none") return;
-      if(/^\d$/.test(e.key)){ const b=overlay.querySelector(`[data-key="${e.key}"]`); b?.click(); }
-      if(e.key==="Backspace") overlay.querySelector('[data-key="clear"]')?.click();
-      if(e.key==="Escape") overlay.querySelector('[data-key="cancel"]')?.click();
-    });
-    render();
-  }
-
-  window.openAdmin=openAdminKeypad;
-  window.openAdminProtected=openAdminKeypad;
-
-  document.addEventListener("DOMContentLoaded",()=>{
-    document.querySelectorAll("button,a,[role='button']").forEach(el=>{
-      const label=(el.textContent||el.getAttribute("aria-label")||"").trim().toLowerCase();
-      const action=(el.getAttribute("onclick")||"").toLowerCase();
-      if(label.includes("administr")||action.includes("openadmin")){
-        el.onclick=function(e){e?.preventDefault();openAdminKeypad();return false;};
-      }
-    });
-  });
-})();
-</script>
-<style>
-.admin-pin-screen{
-  position:fixed;inset:0;z-index:100000;display:flex;align-items:center;justify-content:center;
-  padding:20px;background:rgba(20,18,16,.72);backdrop-filter:blur(10px);-webkit-backdrop-filter:blur(10px);
-}
-.admin-pin-card{
-  width:min(100%,390px);padding:30px 24px 24px;border-radius:28px;text-align:center;
-  background:var(--panel,#f6f1e8);box-shadow:0 24px 70px rgba(0,0,0,.35);
-}
-.admin-pin-lock{font-size:36px;margin-bottom:8px}
-.admin-pin-card h2{margin:0 0 6px}
-.admin-pin-card p{margin:0 0 22px;opacity:.7}
-.admin-pin-dots{display:flex;justify-content:center;gap:14px;margin:10px 0 24px}
-.admin-pin-dots span{width:14px;height:14px;border-radius:50%;border:2px solid currentColor;opacity:.45}
-.admin-pin-dots span.filled{background:currentColor;opacity:1}
-.admin-keypad{display:grid;grid-template-columns:repeat(3,1fr);gap:10px}
-.admin-keypad button{min-height:58px;border-radius:16px;border:1px solid rgba(0,0,0,.12);font-size:20px;font-weight:700;background:rgba(255,255,255,.72);cursor:pointer}
-.admin-keypad button:active{transform:scale(.97)}
-.admin-keypad [data-key="cancel"]{font-size:13px}
-.admin-pin-error{min-height:22px;margin-top:14px;color:#b3261e;font-weight:700}
-@media(max-width:480px){
- .admin-pin-screen{align-items:flex-end;padding:0}
- .admin-pin-card{width:100%;border-radius:28px 28px 0 0;padding:28px 20px max(24px,env(safe-area-inset-bottom))}
-}
-</style>
 
 
 <script>
