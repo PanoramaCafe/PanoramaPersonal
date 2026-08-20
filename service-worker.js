@@ -1,45 +1,6 @@
-const CACHE_NAME="panorama-personal-v1-14";
-const APP_SHELL=["./","./index.html","./manifest.json"];
-
-self.addEventListener("install",event=>{
-  event.waitUntil(
-    caches.open(CACHE_NAME)
-      .then(cache=>cache.addAll(APP_SHELL))
-      .then(()=>self.skipWaiting())
-  );
-});
-
-self.addEventListener("activate",event=>{
-  event.waitUntil(
-    caches.keys()
-      .then(keys=>Promise.all(
-        keys.filter(key=>key!==CACHE_NAME).map(key=>caches.delete(key))
-      ))
-      .then(()=>self.clients.claim())
-  );
-});
-
-self.addEventListener("message",event=>{
-  if(event.data?.type==="SKIP_WAITING") self.skipWaiting();
-});
-
-self.addEventListener("fetch",event=>{
-  if(event.request.method!=="GET") return;
-  const url=new URL(event.request.url);
-
-  if(event.request.mode==="navigate" || url.pathname.endsWith("/index.html")){
-    event.respondWith(
-      fetch(event.request,{cache:"no-store"})
-        .then(response=>{
-          const copy=response.clone();
-          caches.open(CACHE_NAME).then(cache=>cache.put("./index.html",copy));
-          return response;
-        })
-        .catch(()=>caches.match("./index.html").then(r=>r||caches.match("./")))
-    );
-  }else{
-    event.respondWith(
-      caches.match(event.request).then(cached=>cached||fetch(event.request))
-    );
-  }
-});
+const CACHE_NAME="panorama-personal-v2-sync";
+const APP_SHELL=["./","./index.html","./index-sync.html","./manifest.json","./panorama-sync.js"];
+self.addEventListener('install',e=>e.waitUntil(caches.open(CACHE_NAME).then(c=>c.addAll(APP_SHELL)).then(()=>self.skipWaiting())));
+self.addEventListener('activate',e=>e.waitUntil(caches.keys().then(keys=>Promise.all(keys.filter(k=>k!==CACHE_NAME).map(k=>caches.delete(k)))).then(()=>self.clients.claim())));
+self.addEventListener('message',e=>{if(e.data&&e.data.type==='SKIP_WAITING')self.skipWaiting();});
+self.addEventListener('fetch',e=>{if(e.request.method!=="GET")return;const u=new URL(e.request.url);if(e.request.mode==='navigate'&&!u.pathname.endsWith('/index-sync.html')){e.respondWith(Response.redirect(new URL('./index-sync.html',self.registration.scope),302));return;}e.respondWith(caches.match(e.request).then(r=>r||fetch(e.request,{cache:u.pathname.endsWith('/index.html')?'no-store':'default'})));});
