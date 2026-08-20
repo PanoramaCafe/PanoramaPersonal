@@ -1,4 +1,7 @@
-/* Panorama Core integration: Personal */
+/* Panorama Core integration: Personal
+   La nómina semanal solo controla y guarda periodos.
+   El único registro de pagos vive en la sección Pagos.
+*/
 (async()=>{
   const cfg=window.PANORAMA_SUPABASE;
   if(!cfg){console.warn('Panorama Core: missing config');return;}
@@ -11,7 +14,7 @@
     if(!response.ok)throw new Error(body||response.statusText);
     return body?JSON.parse(body):null;
   }
-  function requestKey(periodId,employeeId){return 'personal:'+periodId+':'+employeeId;}
+
   window.PanoramaCore={
     async syncEmployee(employee){
       const payload={full_name:employee.name||employee.full_name,active:employee.active!==false,created_by_app:'personal',updated_by_app:'personal'};
@@ -23,35 +26,63 @@
       if(!rows?.[0])throw new Error('No se pudo crear el empleado en Panorama Core.');
       employee.coreEmployeeId=rows[0].id;
       return rows[0];
-    },
-    async createPayrollRequest(employee,amount,periodStart,periodEnd,periodId){
-      const externalId=requestKey(periodId,employee.id);
-      const existing=await request('payroll_payment_requests?external_payroll_period_id=eq.'+encodeURIComponent(externalId)+'&select=*');
-      if(existing?.[0])return existing[0];
-      const coreEmployee=await this.syncEmployee(employee);
-      const payload={employee_id:coreEmployee.id,external_payroll_period_id:externalId,period_start:periodStart,period_end:periodEnd,amount:Number(amount),currency:'MXN',status:'PENDING_PAYMENT',created_by_app:'personal',updated_by_app:'personal'};
-      try{
-        const rows=await request('payroll_payment_requests',{method:'POST',body:JSON.stringify(payload),headers:{Prefer:'return=representation'}});
-        return rows?.[0];
-      }catch(error){
-        const raced=await request('payroll_payment_requests?external_payroll_period_id=eq.'+encodeURIComponent(externalId)+'&select=*');
-        if(raced?.[0])return raced[0];
-        throw error;
-      }
-    },
-    async syncFinalizedPeriod(period){
-      const created=[];
-      for(const item of period.snapshot.employees){
-        const employee=period.localEmployees.find(e=>e.id===item.employeeId);
-        if(!employee)continue;
-        const row=await this.createPayrollRequest(employee,item.amount,period.start,period.end,period.id);
-        created.push({employeeId:item.employeeId,requestId:row?.id,status:row?.status});
-      }
-      return created;
-    },
-    paymentStatus(periodId,employeeId){
-      return request('payroll_payment_requests?external_payroll_period_id=eq.'+encodeURIComponent(requestKey(periodId,employeeId))+'&select=id,status,paid_at');
     }
   };
+
+  /*
+     UNIFICACIÓN DE PAGOS
+     - Se elimina visualmente la segunda cola de pagos por nómina semanal.
+     - La sección "Pagos" existente es el único punto para registrar pagos.
+     - Finalizar semana deja de comunicarse con Finanzas/Supabase: solo guarda
+       la fotografía local del periodo para control e historial.
+  */
+  window.renderPayrollPaymentQueue=function(){
+    const box=document.getElementById('payrollPaymentQueue');
+    if(box)box.innerHTML='';
+  };
+
+  window.syncCorePaymentStatuses=async function(){};
+
+  window.finalizeCurrentWeek=function(){
+    const pending=weekPendingSessions();
+    if(pending.length){
+      alert(`No se puede finalizar la nómina: hay ${pending.length} registro(s) pendientes de revisión.`);
+      return;
+    }
+    const {start,end}=currentWeekRange(),key=payrollPeriodKey(start);
+    db.payrollPeriods=db.payrollPeriods||{};
+    const snapshot=buildPayrollSnapshot(start,end);
+    if(!snapshot.employees.length){
+      alert('No hay horas aprobadas para finalizar en este periodo.');
+      return;
+    }
+    if(confirm(`¿Confirmar la nómina del ${fmtDateShort(start)} al ${fmtDateShort(new Date(end-1))}?\n\nSe guardará una fotografía de ${snapshot.employees.length} trabajador(es), ${snapshot.totalHours.toFixed(1)} horas y $${snapshot.totalAmount.toFixed(2)}.`)){
+      db.weekFinalizations=db.weekFinalizations||{};
+      db.weekFinalizations[key]={status:'finalized',finalizedAt:new Date().toISOString()};
+      db.payrollPeriods[key]={
+        id:key,
+        start:localDateKey(start),
+        end:localDateKey(new Date(end-1)),
+        status:'finalized',
+        finalizedAt:new Date().toISOString(),
+        snapshot
+      };
+      save();
+      showToast('Periodo de nómina finalizado y guardado. Los pagos se registran únicamente en Pagos.');
+    }
+  };
+
+  /* Limpia metadatos del sistema duplicado cuando existan, sin borrar pagos. */
+  Object.values(db.payrollPeriods||{}).forEach(period=>{
+    if(period){
+      delete period.coreRequests;
+      delete period.corePaymentStatuses;
+      delete period.paidAt;
+      if(period.status==='paid'||period.status==='partial')period.status='finalized';
+    }
+  });
+  try{localStorage.setItem(STORE,JSON.stringify(db));}catch(e){console.warn('No se pudo limpiar el estado de pagos duplicado',e);}
+
+  if(typeof renderAdmin==='function')renderAdmin();
   window.dispatchEvent(new CustomEvent('panorama-core-personal-ready'));
 })();
