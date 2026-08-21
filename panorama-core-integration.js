@@ -1,205 +1,36 @@
-/* Panorama Personal <-> Panorama Café Core
-   Un único estado local sincronizado con Supabase.
-   Los cambios remotos se detectan por el contenido real del estado.
-*/
-(function () {
-  const cfg = window.PANORAMA_SUPABASE;
-  const STORE = 'panorama_cafe_personal_v1';
-  const ROW_ID = 'personal-main';
-  const SYNC_DELAY = 100;
-  const PULL_INTERVAL = 1000;
-
-  function injectLayoutStyles() {
-    if (document.getElementById('panorama-layout-styles')) return;
-    const style = document.createElement('style');
-    style.id = 'panorama-layout-styles';
-    style.textContent = `
-      .clock-workspace{display:grid;grid-template-columns:minmax(360px,1fr) minmax(280px,.72fr);gap:14px;align-items:stretch}
-      .clock-workspace>.card{margin-top:0}.clock-workspace>.clock-home{max-width:none;margin:0}
-      .clock-workspace .pinpad,.clock-workspace .keypad{max-width:360px}
-      .clock-workspace .working-person{width:100%;padding:12px 14px}
-      .clock-workspace #workingNowList{display:flex;flex-direction:column;gap:8px}
-      .clock-workspace .working-empty{flex:1;display:flex;align-items:center;justify-content:center;min-height:180px;text-align:center}
-
-      .admin-shell{display:grid;grid-template-columns:minmax(0,1fr) minmax(300px,.72fr);gap:14px;align-items:start}
-      .admin-shell>.card{margin-top:0}.admin-main,.admin-side{display:flex;flex-direction:column;gap:14px}.admin-main>.card,.admin-side>.card{margin-top:0}
-      .admin-section{border:1px solid var(--line);border-radius:16px;background:var(--card);overflow:hidden}
-      .admin-section+.admin-section{margin-top:10px}
-      .admin-section summary{list-style:none;display:flex;align-items:center;justify-content:space-between;gap:10px;padding:15px 17px;cursor:pointer;font-weight:900}
-      .admin-section summary::-webkit-details-marker{display:none}.admin-section summary::after{content:'⌄';font-size:18px;color:var(--muted);transition:transform .15s}
-      .admin-section[open] summary::after{transform:rotate(180deg)}
-      .admin-section summary small{display:block;font-size:12px;font-weight:600;color:var(--muted);margin-top:2px}
-      .admin-section-body{padding:0 17px 17px}.admin-section-body>.card{border:0;box-shadow:none;padding:0;margin:0;background:transparent}
-      .admin-primary-actions{display:flex;justify-content:flex-end;margin-bottom:10px}
-      .admin-side .card h2,.admin-main .card h2{font-size:18px}
-      @media(max-width:900px){.admin-shell{grid-template-columns:1fr}.admin-main,.admin-side{gap:14px}}
-      @media(max-width:800px){.clock-workspace{grid-template-columns:1fr}.clock-workspace>.card{margin-top:14px}.clock-workspace>.clock-home{margin-top:0}}
-    `;
-    document.head.appendChild(style);
-  }
-
-  function arrangeClockLayout() {
-    const reloj = document.getElementById('reloj');
-    const clockCard = reloj?.querySelector('.clock-home');
-    const workingCard = document.getElementById('workingNowList')?.closest('.card');
-    if (!reloj || !clockCard || !workingCard || reloj.querySelector('.clock-workspace')) return;
-    const workspace = document.createElement('div');
-    workspace.className = 'clock-workspace';
-    reloj.insertBefore(workspace, clockCard);
-    workspace.append(clockCard, workingCard);
-  }
-
-  function cardByHeading(root, text) {
-    return [...root.querySelectorAll(':scope > .card')].find(card => card.querySelector('h2')?.textContent.includes(text));
-  }
-
-  function wrapAdminSection(card, title, subtitle, open = false) {
-    if (!card || card.parentElement?.classList.contains('admin-section-body')) return null;
-    const section = document.createElement('details');
-    section.className = 'admin-section';
-    section.open = open;
-    const summary = document.createElement('summary');
-    summary.innerHTML = `<span>${title}<small>${subtitle}</small></span>`;
-    const body = document.createElement('div');
-    body.className = 'admin-section-body';
-    card.replaceWith(section);
-    body.appendChild(card);
-    section.append(summary, body);
-    return section;
-  }
-
-  function arrangeAdminLayout() {
-    const admin = document.getElementById('admin');
-    if (!admin || admin.querySelector('.admin-shell')) return;
-    const cards = [...admin.querySelectorAll(':scope > .card')];
-    if (!cards.length) return;
-
-    const shell = document.createElement('div');
-    shell.className = 'admin-shell';
-    const main = document.createElement('div'); main.className = 'admin-main';
-    const side = document.createElement('div'); side.className = 'admin-side';
-    shell.append(main, side);
-
-    const summary = cardByHeading(admin, 'Resumen de nómina');
-    const workers = cardByHeading(admin, 'Trabajadores');
-    const review = cardByHeading(admin, 'Revisión de nómina');
-    const payments = cardByHeading(admin, 'Pagos');
-
-    if (summary) main.appendChild(summary);
-    if (workers) main.appendChild(workers);
-    if (payments) side.appendChild(payments);
-    if (review) side.appendChild(wrapAdminSection(review, '📋 Revisión de nómina', 'Horas, alertas y cierre semanal', false));
-
-    for (const card of [...admin.querySelectorAll(':scope > .card')]) {
-      const heading = card.querySelector('h2')?.textContent.trim() || 'Opciones';
-      side.appendChild(wrapAdminSection(card, `⚙️ ${heading}`, 'Opciones y herramientas adicionales', false));
-    }
-
-    if (workers) {
-      const addButton = workers.querySelector('button.primary');
-      if (addButton && !workers.querySelector('.admin-primary-actions')) {
-        const actions = document.createElement('div');
-        actions.className = 'admin-primary-actions';
-        addButton.parentElement?.insertBefore(actions, addButton.parentElement.firstChild);
-        actions.appendChild(addButton);
-      }
-    }
-
-    admin.appendChild(shell);
-  }
-
-  injectLayoutStyles();
-  arrangeClockLayout();
-  arrangeAdminLayout();
-
-  if (!cfg?.url || !cfg?.key) {
-    console.warn('Panorama Personal: falta configuración Supabase');
-    return;
-  }
-
-  const headers = { apikey: cfg.key, Authorization: `Bearer ${cfg.key}`, 'Content-Type': 'application/json' };
-  let pushing = false, applyingRemote = false, pushTimer = null, lastRemoteSignature = null;
-
-  function readState() { try { return JSON.parse(localStorage.getItem(STORE) || 'null'); } catch { return null; } }
-  function stateSignature(data) { try { return JSON.stringify(data); } catch { return ''; } }
-
-  function applyRemoteState(data, updatedAt) {
-    if (!data || typeof data !== 'object') return false;
-    const remoteSignature = stateSignature(data);
-    if (remoteSignature === stateSignature(readState())) return false;
-    applyingRemote = true;
-    try {
-      db = data;
-      localStorage.setItem(STORE, remoteSignature);
-      renderAll();
-      window.dispatchEvent(new CustomEvent('panorama-core-personal-remote-update', { detail: { data, updatedAt } }));
-      return true;
-    } catch (error) {
-      console.error('Panorama Personal: no se pudo aplicar el estado remoto', error);
-      return false;
-    } finally { queueMicrotask(() => { applyingRemote = false; }); }
-  }
-
-  async function publishPayments(data) {
-    const payments = Array.isArray(data?.payments) ? data.payments : [];
-    const employees = new Map((Array.isArray(data?.employees) ? data.employees : []).map(employee => [String(employee.id), employee]));
-    for (const payment of payments) {
-      if (!payment?.id || !payment?.employeeId || !Number.isFinite(Number(payment.amount))) continue;
-      const employee = employees.get(String(payment.employeeId)) || {};
-      const body = {
-        id: String(payment.id), source: 'personal', employee_id: String(payment.employeeId), employee_name: String(employee.name || ''), amount: Number(payment.amount),
-        paid_date: String(payment.paidDate || '').slice(0, 10) || null, period_start: payment.periodStart || null, period_end: payment.periodEnd || null,
-        note: payment.note || '', account: payment.account || null, updated_at: new Date().toISOString()
-      };
-      const response = await fetch(`${cfg.url}/rest/v1/panorama_payroll_payments?on_conflict=id`, {
-        method: 'POST', headers: { ...headers, Prefer: 'resolution=merge-duplicates,return=minimal' }, body: JSON.stringify(body)
-      });
-      if (!response.ok) throw new Error(await response.text());
-    }
-  }
-
-  async function push() {
-    if (pushing || applyingRemote) return;
-    const data = readState(); if (!data) return;
-    pushing = true;
-    try {
-      const response = await fetch(`${cfg.url}/rest/v1/panorama_personal_state?id=eq.${encodeURIComponent(ROW_ID)}`, {
-        method: 'PATCH', headers: { ...headers, Prefer: 'return=representation' }, body: JSON.stringify({ data })
-      });
-      if (!response.ok) throw new Error(await response.text());
-      const row = (await response.json())?.[0];
-      lastRemoteSignature = stateSignature(row?.data || data);
-      await publishPayments(data);
-      window.dispatchEvent(new Event('panorama-core-personal-synced'));
-    } catch (error) { console.warn('Panorama Personal: no se pudo sincronizar', error); }
-    finally { pushing = false; }
-  }
-
-  async function pull() {
-    if (pushing) return false;
-    try {
-      const response = await fetch(`${cfg.url}/rest/v1/panorama_personal_state?id=eq.${encodeURIComponent(ROW_ID)}&select=data,updated_at`, {
-        headers: { ...headers, 'Cache-Control': 'no-cache' }, cache: 'no-store'
-      });
-      if (!response.ok) throw new Error(await response.text());
-      const row = (await response.json())?.[0]; if (!row?.data) return false;
-      const remoteSignature = stateSignature(row.data);
-      if (remoteSignature === lastRemoteSignature) return false;
-      lastRemoteSignature = remoteSignature;
-      return applyRemoteState(row.data, row.updated_at);
-    } catch (error) { console.warn('Panorama Personal: no se pudo recibir el estado remoto', error); return false; }
-  }
-
-  function schedulePush() { if (!applyingRemote) { clearTimeout(pushTimer); pushTimer = setTimeout(push, SYNC_DELAY); } }
-  const originalSetItem = Storage.prototype.setItem;
-  Storage.prototype.setItem = function (key, value) { const result = originalSetItem.apply(this, arguments); if (this === localStorage && key === STORE) schedulePush(); return result; };
-  window.PanoramaCore = { syncNow: push, pullNow: pull };
-
-  async function start() {
-    injectLayoutStyles(); arrangeClockLayout(); arrangeAdminLayout();
-    await pull(); if (!lastRemoteSignature) await push();
-    setInterval(pull, PULL_INTERVAL);
-    window.dispatchEvent(new Event('panorama-core-personal-ready'));
-  }
-  if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', start, { once: true }); else start();
+/* Panorama Personal <-> Panorama Café Core */
+(function(){
+ const cfg=window.PANORAMA_SUPABASE,STORE='panorama_cafe_personal_v1',ROW_ID='personal-main',SYNC_DELAY=100,PULL_INTERVAL=1000;
+ function state(){try{return JSON.parse(localStorage.getItem(STORE)||'null')}catch{return null}}
+ function sig(x){try{return JSON.stringify(x)}catch{return''}}
+ function inject(){if(document.getElementById('panorama-layout-styles'))return;const s=document.createElement('style');s.id='panorama-layout-styles';s.textContent=`
+ .clock-workspace{display:grid;grid-template-columns:minmax(360px,1fr) minmax(280px,.72fr);gap:14px;align-items:stretch}.clock-workspace>.card{margin-top:0}.clock-workspace>.clock-home{max-width:none;margin:0}.clock-workspace .pinpad{max-width:360px}.clock-workspace .working-person{width:100%;padding:12px 14px}.clock-workspace #workingNowList{display:flex;flex-direction:column;gap:8px}.clock-workspace .working-empty{flex:1;display:flex;align-items:center;justify-content:center;min-height:180px;text-align:center}
+ .admin-shell{display:grid;grid-template-columns:minmax(0,1fr) minmax(300px,.72fr);gap:14px;align-items:start}.admin-shell>.card{margin-top:0}.admin-main,.admin-side{display:flex;flex-direction:column;gap:14px}.admin-main>.card,.admin-side>.card{margin-top:0}.admin-section{border:1px solid var(--line);border-radius:16px;background:var(--card);overflow:hidden}.admin-section+.admin-section{margin-top:10px}.admin-section summary{list-style:none;display:flex;align-items:center;justify-content:space-between;gap:10px;padding:15px 17px;cursor:pointer;font-weight:900}.admin-section summary::-webkit-details-marker{display:none}.admin-section summary::after{content:'⌄';font-size:18px;color:var(--muted)}.admin-section[open] summary::after{transform:rotate(180deg)}.admin-section summary small{display:block;font-size:12px;font-weight:600;color:var(--muted);margin-top:2px}.admin-section-body{padding:0 17px 17px}.admin-section-body>.card{border:0;box-shadow:none;padding:0;margin:0;background:transparent}.admin-primary-actions{display:flex;justify-content:flex-end;margin-bottom:10px}
+ .period-toolbar{display:flex;gap:10px;align-items:end;flex-wrap:wrap;margin:12px 0}.period-toolbar>div{min-width:210px;flex:1}.payment-history-group{border-top:1px solid var(--line);padding:12px 0}.payment-history-date{font-size:12px;font-weight:900;color:var(--muted);margin-bottom:6px;text-transform:uppercase}.payment-history-row{display:flex;justify-content:space-between;gap:12px;padding:7px 0}.payment-history-row small{display:block;color:var(--muted);margin-top:2px}.week-modal{position:fixed;inset:0;background:#0008;display:flex;align-items:center;justify-content:center;padding:16px;z-index:90}.week-modal-box{background:#fff;width:min(680px,100%);max-height:90vh;overflow:auto;border-radius:20px;padding:20px}.week-day{padding:12px 0;border-bottom:1px solid var(--line)}.week-day:last-child{border-bottom:0}.week-total{position:sticky;bottom:-20px;background:#fff;border-top:2px solid var(--line);padding:14px 0;font-weight:900;font-size:18px}.week-session{font-size:13px;color:var(--muted);margin-top:4px}
+ @media(max-width:900px){.admin-shell{grid-template-columns:1fr}.admin-main,.admin-side{gap:14px}}@media(max-width:800px){.clock-workspace{grid-template-columns:1fr}.clock-workspace>.card{margin-top:14px}.clock-workspace>.clock-home{margin-top:0}}
+ `;document.head.appendChild(s)}
+ function clock(){const r=document.getElementById('reloj'),c=r?.querySelector('.clock-home'),w=document.getElementById('workingNowList')?.closest('.card');if(!r||!c||!w||r.querySelector('.clock-workspace'))return;const x=document.createElement('div');x.className='clock-workspace';r.insertBefore(x,c);x.append(c,w)}
+ function heading(root,text){return [...root.querySelectorAll(':scope > .card')].find(c=>c.querySelector('h2')?.textContent.includes(text))}
+ function wrap(card,title,sub,open=false){if(!card||card.parentElement?.classList.contains('admin-section-body'))return null;const d=document.createElement('details');d.className='admin-section';d.open=open;const sm=document.createElement('summary');sm.innerHTML=`<span>${title}<small>${sub}</small></span>`;const b=document.createElement('div');b.className='admin-section-body';card.replaceWith(d);b.appendChild(card);d.append(sm,b);return d}
+ function admin(){const a=document.getElementById('admin');if(!a||a.querySelector('.admin-shell'))return;const shell=document.createElement('div'),main=document.createElement('div'),side=document.createElement('div');shell.className='admin-shell';main.className='admin-main';side.className='admin-side';shell.append(main,side);const sum=heading(a,'Resumen de nómina'),workers=heading(a,'Trabajadores'),review=heading(a,'Revisión de nómina'),payments=heading(a,'Pagos');if(sum)main.append(sum);if(workers)main.append(workers);if(payments)side.append(payments);if(review)side.append(wrap(review,'📋 Revisión de nómina','Horas, alertas y cierre semanal',false));for(const c of [...a.querySelectorAll(':scope > .card')])side.append(wrap(c,`⚙️ ${c.querySelector('h2')?.textContent.trim()||'Opciones'}`,'Opciones y herramientas adicionales',false));if(workers){const b=workers.querySelector('button.primary');if(b&&!workers.querySelector('.admin-primary-actions')){const x=document.createElement('div');x.className='admin-primary-actions';b.parentElement?.insertBefore(x,b.parentElement.firstChild);x.append(b)}}a.append(shell);enhanceAdmin()}
+ function dayKey(d){return new Date(d).toISOString().slice(0,10)}
+ function weekStart(d){const x=new Date(d);x.setHours(0,0,0,0);x.setDate(x.getDate()-((x.getDay()+6)%7));return x}
+ function fmtDate(d){return new Intl.DateTimeFormat('es-MX',{day:'2-digit',month:'short',year:'numeric'}).format(new Date(d))}
+ function mins(a,b){return Math.max(0,Math.round((new Date(b)-new Date(a))/60000))}
+ function fmtM(m){return `${Math.floor(m/60)} h ${String(m%60).padStart(2,'0')} min`}
+ function enhanceAdmin(){const review=document.getElementById('payrollTable')?.closest('.card'),pay=document.getElementById('paymentsSummary')?.closest('.card');if(review&&!review.querySelector('.period-toolbar')){const bar=document.createElement('div');bar.className='period-toolbar';bar.innerHTML='<div><label>Ver horas de</label><select class="weekly-employee"><option value="">Selecciona un empleado</option></select></div><button class="primary weekly-open">Ver semana completa</button>';review.querySelector('.weeknav')?.after(bar);bar.querySelector('.weekly-open').onclick=()=>openWeek(bar.querySelector('.weekly-employee').value);fillEmployees(bar.querySelector('.weekly-employee'))}
+ if(pay&&!pay.querySelector('.payment-history-drawer')){const h=[...pay.querySelectorAll('h3')].find(x=>x.textContent.includes('Historial de pagos'));const filter=h?.nextElementSibling;if(h){const d=document.createElement('details');d.className='admin-section payment-history-drawer';d.innerHTML='<summary><span>💳 Historial de pagos<small>Ordenado por fecha de pago</small></span></summary><div class="admin-section-body"><div class="payment-history-view"></div></div>';h.replaceWith(d);if(filter)d.querySelector('.admin-section-body').prepend(filter);renderHistory(d.querySelector('.payment-history-view'))}}
+ }
+ function fillEmployees(sel){const d=state();if(!sel||!d)return;const cur=sel.value;sel.innerHTML='<option value="">Selecciona un empleado</option>';for(const e of d.employees||[]){const o=document.createElement('option');o.value=e.id;o.textContent=e.name||'Sin nombre';sel.append(o)}sel.value=cur}
+ function paymentDate(p){return p.paidDate||p.date||p.createdAt||p.created_at||null}
+ function renderHistory(host){const d=state();if(!host||!d)return;const em=new Map((d.employees||[]).map(e=>[String(e.id),e.name||'Empleado']));const list=[...(d.payments||[])].sort((a,b)=>new Date(paymentDate(b)||0)-new Date(paymentDate(a)||0));const groups=new Map();for(const p of list){const k=paymentDate(p)?dayKey(paymentDate(p)):'sin-fecha';if(!groups.has(k))groups.set(k,[]);groups.get(k).push(p)}host.innerHTML='';if(!list.length){host.innerHTML='<div class="empty">Aún no hay pagos registrados.</div>';return}for(const [k,rows] of groups){const g=document.createElement('div');g.className='payment-history-group';const title=document.createElement('div');title.className='payment-history-date';title.textContent=k==='sin-fecha'?'Sin fecha registrada':fmtDate(k);g.append(title);for(const p of rows){const e=document.createElement('div');e.className='payment-history-row';const name=em.get(String(p.employeeId))||p.employeeName||'Empleado';const period=p.periodStart&&p.periodEnd?`Periodo: ${fmtDate(p.periodStart)} – ${fmtDate(p.periodEnd)}`:'Pago registrado';e.innerHTML=`<div><strong>${name}</strong><small>${period}</small></div><strong>$${Number(p.amount||0).toFixed(2)}</strong>`;g.append(e)}host.append(g)}}
+ function openWeek(id){const d=state();if(!d){return}const e=(d.employees||[]).find(x=>String(x.id)===String(id));if(!e){alert('Selecciona un empleado.');return}const base=new Date();const input=document.getElementById('weekLabel');if(input?.dataset?.weekStart)base=new Date(input.dataset.weekStart);const start=weekStart(base),end=new Date(start);end.setDate(end.getDate()+7);const sessions=(d.sessions||[]).filter(s=>String(s.employeeId)===String(id)&&new Date(s.clockIn||s.start||s.in)>=start&&new Date(s.clockIn||s.start||s.in)<end);const modal=document.createElement('div');modal.className='week-modal';const days=[];let total=0;for(let i=0;i<7;i++){const ds=new Date(start);ds.setDate(start.getDate()+i);const de=new Date(ds);de.setDate(ds.getDate()+1);const rows=sessions.filter(s=>{const x=new Date(s.clockIn||s.start||s.in);return x>=ds&&x<de});let html='<div class="week-day"><strong>'+new Intl.DateTimeFormat('es-MX',{weekday:'long',day:'numeric',month:'short'}).format(ds)+'</strong>';let dm=0;if(!rows.length)html+='<div class="week-session">Sin registro</div>';for(const s of rows){const a=s.clockIn||s.start||s.in,b=s.clockOut||s.end||s.out;if(a&&b){const m=mins(a,b);dm+=m;html+=`<div class="week-session">${new Date(a).toLocaleTimeString('es-MX',{hour:'2-digit',minute:'2-digit'})} → ${new Date(b).toLocaleTimeString('es-MX',{hour:'2-digit',minute:'2-digit'})} · ${fmtM(m)}</div>`}else html+='<div class="week-session">Sesión pendiente de salida</div>'}total+=dm;html+=`<div><strong>Total: ${fmtM(dm)}</strong></div></div>`;days.push(html)}modal.innerHTML=`<div class="week-modal-box"><div class="modalhead"><div><h2 style="margin:0">🕒 Horas de ${e.name}</h2><div class="muted">Semana ${fmtDate(start)} – ${fmtDate(new Date(end-1))}</div></div><button class="close">✕</button></div>${days.join('')}<div class="week-total">Total semanal: ${fmtM(total)}</div></div>`;modal.querySelector('.close').onclick=()=>modal.remove();modal.onclick=x=>{if(x.target===modal)modal.remove()};document.body.append(modal)}
+ inject();clock();admin();
+ if(!cfg?.url||!cfg?.key){console.warn('Panorama Personal: falta configuración Supabase');return}
+ const headers={apikey:cfg.key,Authorization:'Bearer '+cfg.key,'Content-Type':'application/json'};let pushing=false,applying=false,timer=null,last=null;
+ function apply(data,updatedAt){if(!data||typeof data!=='object'||sig(data)===sig(state()))return false;applying=true;try{db=data;localStorage.setItem(STORE,sig(data));renderAll();enhanceAdmin();window.dispatchEvent(new CustomEvent('panorama-core-personal-remote-update',{detail:{data,updatedAt}}));return true}catch(e){console.error('Panorama Personal: no se pudo aplicar el estado remoto',e);return false}finally{queueMicrotask(()=>applying=false)}}
+ async function publish(data){const em=new Map((data?.employees||[]).map(e=>[String(e.id),e]));for(const p of data?.payments||[]){if(!p?.id||!p?.employeeId||!Number.isFinite(Number(p.amount)))continue;const e=em.get(String(p.employeeId))||{};const body={id:String(p.id),source:'personal',employee_id:String(p.employeeId),employee_name:String(e.name||''),amount:Number(p.amount),paid_date:String(paymentDate(p)||'').slice(0,10)||null,period_start:p.periodStart||null,period_end:p.periodEnd||null,note:p.note||'',account:p.account||null,updated_at:new Date().toISOString()};const r=await fetch(cfg.url+'/rest/v1/panorama_payroll_payments?on_conflict=id',{method:'POST',headers:{...headers,Prefer:'resolution=merge-duplicates,return=minimal'},body:JSON.stringify(body)});if(!r.ok)throw new Error(await r.text())}}
+ async function push(){if(pushing||applying)return;const data=state();if(!data)return;pushing=true;try{const r=await fetch(cfg.url+'/rest/v1/panorama_personal_state?id=eq.'+encodeURIComponent(ROW_ID),{method:'PATCH',headers:{...headers,Prefer:'return=representation'},body:JSON.stringify({data})});if(!r.ok)throw new Error(await r.text());const row=(await r.json())?.[0];last=sig(row?.data||data);await publish(data);window.dispatchEvent(new Event('panorama-core-personal-synced'))}catch(e){console.warn('Panorama Personal: no se pudo sincronizar',e)}finally{pushing=false}}
+ async function pull(){if(pushing)return false;try{const r=await fetch(cfg.url+'/rest/v1/panorama_personal_state?id=eq.'+encodeURIComponent(ROW_ID)+'&select=data,updated_at',{headers:{...headers,'Cache-Control':'no-cache'},cache:'no-store'});if(!r.ok)throw new Error(await r.text());const row=(await r.json())?.[0];if(!row?.data)return false;const remote=sig(row.data);if(remote===last)return false;last=remote;const changed=apply(row.data,row.updated_at);if(changed){const h=document.querySelector('.payment-history-view');renderHistory(h);const s=document.querySelector('.weekly-employee');fillEmployees(s)}return changed}catch(e){console.warn('Panorama Personal: no se pudo recibir el estado remoto',e);return false}}
+ function schedule(){if(!applying){clearTimeout(timer);timer=setTimeout(push,SYNC_DELAY)}}const orig=Storage.prototype.setItem;Storage.prototype.setItem=function(k,v){const out=orig.apply(this,arguments);if(this===localStorage&&k===STORE)schedule();return out};window.PanoramaCore={syncNow:push,pullNow:pull};async function start(){inject();clock();admin();await pull();if(!last)await push();setInterval(pull,PULL_INTERVAL);window.dispatchEvent(new Event('panorama-core-personal-ready'))}if(document.readyState==='loading')document.addEventListener('DOMContentLoaded',start,{once:true});else start();
 })();
