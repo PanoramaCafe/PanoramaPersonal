@@ -1,6 +1,5 @@
 /* Panorama Personal <-> Panorama Café Core
-   Una sola responsabilidad: sincronizar estado y pagos con Supabase.
-   La interfaz decide cómo aplicar y renderizar cambios remotos.
+   Una sola ruta: estado local <-> Supabase <-> estado vivo de la aplicación.
 */
 (function(){
   const cfg=window.PANORAMA_SUPABASE;
@@ -13,6 +12,19 @@
 
   function readLocal(){try{return JSON.parse(localStorage.getItem(STORE)||'null');}catch{return null;}}
   function writeLocal(data){applyingRemote=true;try{localStorage.setItem(STORE,JSON.stringify(data));}finally{applyingRemote=false;}}
+
+  function applyRemoteState(data,meta={}){
+    writeLocal(data);
+    try{
+      db=(typeof normalizeDB==='function'?normalizeDB(data):data);
+      if(typeof ensureDrafts==='function')ensureDrafts();
+      if(typeof renderAll==='function')renderAll();
+      console.info('Panorama Personal: interfaz actualizada desde cambio remoto');
+    }catch(error){
+      console.warn('Panorama Personal: no se pudo aplicar el estado remoto a la interfaz',error);
+    }
+    window.dispatchEvent(new CustomEvent('panorama-core-personal-remote-update',{detail:{data,updatedAt:meta.updatedAt||null,initial:!!meta.initial}}));
+  }
 
   async function publishPayments(data){
     const payments=Array.isArray(data?.payments)?data.payments:[];
@@ -64,8 +76,7 @@
       if(row.updated_at===lastRemoteUpdatedAt)return false;
       const current=readLocal();lastRemoteUpdatedAt=row.updated_at;
       if(JSON.stringify(current)===JSON.stringify(row.data))return false;
-      writeLocal(row.data);
-      window.dispatchEvent(new CustomEvent('panorama-core-personal-remote-update',{detail:{data:row.data,updatedAt:row.updated_at,initial}}));
+      applyRemoteState(row.data,{updatedAt:row.updated_at,initial});
       return true;
     }catch(error){console.warn('Panorama Core: no se pudo leer estado remoto',error);return false;}
   }
