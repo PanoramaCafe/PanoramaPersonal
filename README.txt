@@ -1,1 +1,0 @@
-V1.17: Revisión de nómina sin efectos financieros. Pagos aplicados explícitamente a sesiones pendientes. Las horas solo aparecen pagadas cuando una asignación de pago las cubre. Pago parcial soportado. Bono automático solo sobre excedente después de cubrir trabajo pendiente; bono independiente disponible.
