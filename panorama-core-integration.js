@@ -1,5 +1,6 @@
 /* Panorama Personal <-> Panorama Café Core
    Estado compartido + publicación directa de pagos reales a Finanzas.
+   La tabla puente refleja exactamente los pagos actuales de Personal: altas y bajas.
 */
 (function(){
   const cfg=window.PANORAMA_SUPABASE;
@@ -11,9 +12,25 @@
 
   function readLocal(){try{return JSON.parse(localStorage.getItem(STORE)||'null');}catch{return null;}}
   function writeLocal(data){applyingRemote=true;try{localStorage.setItem(STORE,JSON.stringify(data));}finally{setTimeout(()=>applyingRemote=false,0);}}
+
   async function publishPayments(data){
     const payments=Array.isArray(data?.payments)?data.payments:[];
     const employees=new Map((Array.isArray(data?.employees)?data.employees:[]).map(e=>[String(e.id),e]));
+    const activeIds=new Set(payments.filter(p=>p?.id).map(p=>String(p.id)));
+
+    /* Primero eliminamos del puente únicamente pagos que pertenecen a Personal
+       pero ya no existen en su historial actual. */
+    const existingResponse=await fetch(cfg.url+'/rest/v1/panorama_payroll_payments?source=eq.personal&select=id',{headers});
+    if(!existingResponse.ok) throw new Error(await existingResponse.text());
+    const existing=await existingResponse.json();
+    for(const row of (Array.isArray(existing)?existing:[])){
+      const id=String(row.id);
+      if(activeIds.has(id)) continue;
+      const del=await fetch(cfg.url+'/rest/v1/panorama_payroll_payments?id=eq.'+encodeURIComponent(id)+'&source=eq.personal',{method:'DELETE',headers:{...headers,Prefer:'return=minimal'}});
+      if(!del.ok) throw new Error(await del.text());
+    }
+
+    /* Después publicamos o actualizamos los pagos que sí siguen vigentes. */
     for(const p of payments){
       if(!p?.id||!p?.employeeId||!Number.isFinite(Number(p.amount))) continue;
       const employee=employees.get(String(p.employeeId))||{};
@@ -30,6 +47,7 @@
       if(!r.ok) throw new Error(await r.text());
     }
   }
+
   async function push(){
     if(pushing||applyingRemote)return;
     const data=readLocal();if(!data)return;
