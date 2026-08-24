@@ -1,19 +1,5 @@
-/* Panorama Personal: bootstrap de instalacion PWA. */
+/* Panorama Personal: bootstrap PWA + isolated payment bridge. */
 (function(){
-  if(document.head){
-    if(!document.querySelector('link[rel="manifest"]')){
-      const link=document.createElement('link');
-      link.rel='manifest';
-      link.href='./manifest.json';
-      document.head.appendChild(link);
-    }
-    const meta=document.createElement('meta');
-    meta.name='apple-mobile-web-app-capable';
-    meta.content='yes';
-    document.head.appendChild(meta);
-    const title=document.createElement('meta');
-    title.name='apple-mobile-web-app-title';
-    title.content='Panorama Personal';
-    document.head.appendChild(title);
-  }
+  if(document.head){if(!document.querySelector('link[rel="manifest"]')){const link=document.createElement('link');link.rel='manifest';link.href='./manifest.json';document.head.appendChild(link)}const meta=document.createElement('meta');meta.name='apple-mobile-web-app-capable';meta.content='yes';document.head.appendChild(meta);const title=document.createElement('meta');title.name='apple-mobile-web-app-title';title.content='Panorama Personal';document.head.appendChild(title)}
+  setTimeout(()=>{const original=window.savePayment;if(typeof original!=='function'||original.__panoramaBridge)return;window.savePayment=function(){const before=new Set((window.db?.payments||db?.payments||[]).map(p=>p.id));const out=original.apply(this,arguments);const rows=(window.db?.payments||db?.payments||[]);const p=rows.find(x=>!before.has(x.id));if(p?.id&&p.type==='payment')publish(p);return out};window.savePayment.__panoramaBridge=true;async function publish(p){const cfg=window.PANORAMA_SUPABASE;if(!cfg?.url||!cfg?.key||!navigator.onLine)return;const state=(window.db||db),emp=(state?.employees||[]).find(e=>String(e.id)===String(p.employeeId))||{};try{await fetch(cfg.url+'/rest/v1/panorama_payroll_payments?on_conflict=id',{method:'POST',headers:{apikey:cfg.key,Authorization:'Bearer '+cfg.key,'Content-Type':'application/json',Prefer:'resolution=merge-duplicates'},body:JSON.stringify({id:String(p.id),source:'personal',employee_id:String(p.employeeId),employee_name:String(emp.name||''),amount:Number(p.amount),paid_date:p.paidDate,period_start:p.periodStart||null,period_end:p.periodEnd||null,note:p.note||'',account:p.account||null,updated_at:new Date().toISOString()})})}catch(e){console.warn('No se pudo publicar el pago a Finanzas',e)}}},0);
 })();
