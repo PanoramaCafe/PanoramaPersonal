@@ -1,12 +1,40 @@
-/* Panorama Personal: bootstrap PWA + isolated payment bridge.
-   This file never touches the Personal sync engine. It only mirrors the current
-   payment list to the shared payroll table. */
+/* Panorama Personal — isolated payment bridge.
+   Compatibility filename retained. This file mirrors Personal payments to the
+   shared payroll table. It NEVER deletes remote payment rows. */
 (function(){
- if(document.head){if(!document.querySelector('link[rel="manifest"]')){const link=document.createElement('link');link.rel='manifest';link.href='./manifest.json';document.head.appendChild(link)}const meta=document.createElement('meta');meta.name='apple-mobile-web-app-capable';meta.content='yes';document.head.appendChild(meta);const title=document.createElement('meta');title.name='apple-mobile-web-app-title';title.content='Panorama Personal';document.head.appendChild(title)}
- const cfg=()=>window.PANORAMA_SUPABASE;let lastSignature='';
- const currentState=()=>window.db||((typeof db!=='undefined')?db:null);
- async function request(path,opt={}){const c=cfg();if(!c?.url||!c?.key||!navigator.onLine)throw new Error('offline');const r=await fetch(c.url+'/rest/v1/'+path,{...opt,headers:{apikey:c.key,Authorization:'Bearer '+c.key,'Content-Type':'application/json',...(opt.headers||{})},cache:'no-store'});if(!r.ok)throw new Error(await r.text());return r}
- async function publish(p){const state=currentState(),emp=(state?.employees||[]).find(e=>String(e.id)===String(p.employeeId))||{};await request('panorama_payroll_payments?on_conflict=id',{method:'POST',headers:{Prefer:'resolution=merge-duplicates'},body:JSON.stringify({id:String(p.id),source:'personal',employee_id:String(p.employeeId),employee_name:String(emp.name||p.employeeName||''),amount:Number(p.amount),paid_date:p.paidDate||p.date||null,period_start:p.periodStart||null,period_end:p.periodEnd||null,note:p.note||'',account:p.account||null,updated_at:new Date().toISOString()})})}
- async function reconcile(){const state=currentState(),payments=(state?.payments||[]).filter(p=>p?.id&&p.type==='payment');const signature=JSON.stringify(payments.map(p=>[p.id,p.amount,p.paidDate,p.periodStart,p.periodEnd,p.employeeId]));if(signature===lastSignature)return;try{const wanted=new Set(payments.map(p=>String(p.id)));const r=await request('panorama_payroll_payments?source=eq.personal&select=id');const remote=await r.json();for(const p of remote){if(!wanted.has(String(p.id)))await request('panorama_payroll_payments?id=eq.'+encodeURIComponent(String(p.id)),{method:'DELETE'})}for(const p of payments)await publish(p);lastSignature=signature;window.dispatchEvent(new CustomEvent('panorama-payment-bridge-sync',{detail:{count:payments.length}}))}catch(e){console.warn('Puente Personal→Finanzas pendiente',e)}}
- setTimeout(()=>{const original=window.savePayment;if(typeof original==='function'&&!original.__panoramaBridge){window.savePayment=function(){const out=original.apply(this,arguments);setTimeout(reconcile,0);return out};window.savePayment.__panoramaBridge=true}reconcile();setInterval(reconcile,700);window.addEventListener('online',reconcile)},0);
+'use strict';
+const cfg=()=>window.PANORAMA_SUPABASE;
+let lastSignature='';
+const currentState=()=>window.db||((typeof db!=='undefined')?db:null);
+async function request(path,opt={}){
+  const c=cfg();
+  if(!c?.url||!c?.key||!navigator.onLine)throw new Error('offline');
+  const r=await fetch(c.url+'/rest/v1/'+path,{...opt,headers:{apikey:c.key,Authorization:'Bearer '+c.key,'Content-Type':'application/json',...(opt.headers||{})},cache:'no-store'});
+  if(!r.ok)throw new Error(await r.text());
+  return r;
+}
+async function publish(p){
+  const state=currentState(),emp=(state?.employees||[]).find(e=>String(e.id)===String(p.employeeId))||{};
+  await request('panorama_payroll_payments?on_conflict=id',{method:'POST',headers:{Prefer:'resolution=merge-duplicates'},body:JSON.stringify({id:String(p.id),source:'personal',employee_id:String(p.employeeId),employee_name:String(emp.name||p.employeeName||''),amount:Number(p.amount),paid_date:p.paidDate||p.date||null,period_start:p.periodStart||null,period_end:p.periodEnd||null,note:p.note||'',account:p.account||null,updated_at:new Date().toISOString()})});
+}
+async function reconcile(){
+  const state=currentState(),payments=(state?.payments||[]).filter(p=>p?.id&&p.type==='payment');
+  const signature=JSON.stringify(payments.map(p=>[p.id,p.amount,p.paidDate,p.periodStart,p.periodEnd,p.employeeId]));
+  if(signature===lastSignature)return;
+  try{
+    for(const p of payments)await publish(p);
+    lastSignature=signature;
+    window.dispatchEvent(new CustomEvent('panorama-payment-bridge-sync',{detail:{count:payments.length}}));
+  }catch(e){console.warn('Puente Personal→Finanzas pendiente',e)}
+}
+setTimeout(()=>{
+  const original=window.savePayment;
+  if(typeof original==='function'&&!original.__panoramaBridge){
+    window.savePayment=function(){const out=original.apply(this,arguments);setTimeout(reconcile,0);return out};
+    window.savePayment.__panoramaBridge=true;
+  }
+  reconcile();
+  setInterval(reconcile,4000);
+  window.addEventListener('online',reconcile);
+},0);
 })();
