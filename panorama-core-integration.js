@@ -1,51 +1,22 @@
-/* Panorama Personal — synchronization engine.
-   SAFETY MODE: never delete local attendance because of a remote snapshot.
-   Arrays are merged by stable id; object maps are merged by key. */
-(function(){
-'use strict';
-const cfg=window.PANORAMA_SUPABASE;
-const CORE_STORE='panorama_cafe_personal_v1';
-const QUEUE='panorama_personal_pending_v5';
-const LEGACY_QUEUE='panorama_personal_pending_v4';
-const ROW='personal-main';
-const POLL=4000;
-let syncing=false,applying=false,last='';
-const clone=x=>x==null?x:JSON.parse(JSON.stringify(x));
-const read=k=>{try{return JSON.parse(localStorage.getItem(k)||'null')}catch{return null}};
-const same=(a,b)=>JSON.stringify(a)===JSON.stringify(b);
-function stamp(data){const d=clone(data)||{};d._sync={...(d._sync||{}),updatedAt:new Date().toISOString()};return d}
-function status(text,type){let e=document.getElementById('panoramaSyncStatus');if(!e){e=document.createElement('div');e.id='panoramaSyncStatus';e.style.cssText='position:fixed;right:12px;bottom:12px;z-index:9999;padding:8px 11px;border-radius:999px;background:#fff;border:1px solid #ddd;font:800 11px system-ui';document.body.appendChild(e)}e.textContent=text;e.style.color=type==='ok'?'#16803a':type==='offline'?'#a56700':'#b36b00'}
-function hasPending(){return !!(read(QUEUE)||read(LEGACY_QUEUE))}
-function refresh(){if(!navigator.onLine)return status('● Sin conexión','offline');status(hasPending()?'● Pendiente de sincronizar':'● Sincronizado',hasPending()?'pending':'ok')}
-function mergeArray(localList,remoteList){
-  const out=[],pos=new Map();
-  for(const item of (remoteList||[])){const key=item?.id?`id:${item.id}`:`raw:${JSON.stringify(item)}`;if(!pos.has(key)){pos.set(key,out.length);out.push(clone(item))}}
-  for(const item of (localList||[])){const key=item?.id?`id:${item.id}`:`raw:${JSON.stringify(item)}`;if(pos.has(key))out[pos.get(key)]=clone(item);else{pos.set(key,out.length);out.push(clone(item))}}
-  return out;
-}
-function mergeObject(localObj,remoteObj){return {...clone(remoteObj||{}),...clone(localObj||{})}}
-function mergeStates(local,remote){
-  if(!local)return clone(remote);
-  if(!remote)return clone(local);
-  const out=clone(remote);
-  for(const key of ['employees','sessions','payments'])out[key]=mergeArray(local[key],remote[key]);
-  for(const key of ['payrollPeriods','weekFinalizations','approvals'])out[key]=mergeObject(local[key],remote[key]);
-  if(local.adminPin)out.adminPin=local.adminPin;
-  return out;
-}
-function mergeQueues(local,q5,q4){return mergeStates(mergeStates(local,q4),q5)}
-function apply(data){if(!data||typeof data!=='object')return;applying=true;try{const d=clone(data);db=d;localStorage.setItem(CORE_STORE,JSON.stringify(d));last=JSON.stringify(d);if(typeof renderAll==='function')renderAll();window.dispatchEvent(new CustomEvent('panorama-core-personal-remote-update',{detail:{data:d}}))}finally{setTimeout(()=>applying=false,0)}}
-function restoreClockLayout(){const reloj=document.getElementById('reloj'),clock=reloj?.querySelector('.clock-home'),working=document.getElementById('workingNowList')?.closest('.card');if(!reloj||!clock||!working)return;if(!reloj.querySelector('.clock-workspace')){const w=document.createElement('div');w.className='clock-workspace';reloj.insertBefore(w,clock);w.append(clock,working)}if(!document.getElementById('panorama-clock-layout')){const s=document.createElement('style');s.id='panorama-clock-layout';s.textContent='.clock-workspace{display:grid;grid-template-columns:minmax(360px,1fr) minmax(300px,.72fr);gap:14px;align-items:stretch;width:100%}.clock-workspace>.card{margin-top:0}.clock-workspace>.clock-home{max-width:none;margin:0}.clock-workspace #workingNowList{display:flex;flex-direction:column;gap:8px}.clock-workspace .working-empty{min-height:180px;display:flex;align-items:center;justify-content:center}@media(max-width:900px){.clock-workspace{grid-template-columns:1fr}.clock-workspace>.card{margin-top:14px}}';document.head.appendChild(s)}}
-restoreClockLayout();
-if(!cfg?.url||!cfg?.key){refresh();return}
-const H={apikey:cfg.key,Authorization:'Bearer '+cfg.key,'Content-Type':'application/json'};
-async function getRemote(){const r=await fetch(cfg.url+'/rest/v1/panorama_personal_state?id=eq.'+encodeURIComponent(ROW)+'&select=data',{headers:H,cache:'no-store'});if(!r.ok)throw new Error(await r.text());return (await r.json())[0]||null}
-async function put(data){const r=await fetch(cfg.url+'/rest/v1/panorama_personal_state?on_conflict=id',{method:'POST',headers:{...H,Prefer:'resolution=merge-duplicates,return=representation'},body:JSON.stringify({id:ROW,data})});if(!r.ok)throw new Error(await r.text());return (await r.json())[0]||null}
-async function publishPayments(data){const em=new Map((data?.employees||[]).map(e=>[String(e.id),e]));for(const p of data?.payments||[]){if(!p?.id||!p?.employeeId||!Number.isFinite(Number(p.amount)))continue;const e=em.get(String(p.employeeId))||{};const r=await fetch(cfg.url+'/rest/v1/panorama_payroll_payments?on_conflict=id',{method:'POST',headers:{...H,Prefer:'resolution=merge-duplicates,return=minimal'},body:JSON.stringify({id:String(p.id),source:'personal',employee_id:String(p.employeeId),employee_name:String(e.name||p.employeeName||''),amount:Number(p.amount),paid_date:String(p.paidDate||p.date||'').slice(0,10)||null,period_start:p.periodStart||null,period_end:p.periodEnd||null,note:p.note||'',account:p.account||null,updated_at:new Date().toISOString()})});if(!r.ok)throw new Error(await r.text())}}
-async function sync(){if(syncing||applying||!navigator.onLine)return false;syncing=true;try{const local=read(CORE_STORE);const q5=read(QUEUE);const q4=read(LEGACY_QUEUE);const row=await getRemote();const remote=row?.data||null;const base=mergeQueues(local,q5,q4);const merged=mergeStates(base,remote);if(!merged)return true;const needsWrite=!remote||!same(merged,remote);const outgoing=needsWrite?stamp(merged):merged;if(needsWrite){const saved=await put(outgoing);const final=saved?.data||outgoing;apply(final);try{await publishPayments(final)}catch(e){console.warn(e)}}else if(!same(merged,local))apply(merged);localStorage.removeItem(QUEUE);localStorage.removeItem(LEGACY_QUEUE);refresh();return true}catch(e){console.warn('Sincronización pendiente',e);refresh();return false}finally{syncing=false;refresh()}}
-function observe(){last=JSON.stringify(read(CORE_STORE));setInterval(()=>{if(applying)return;const now=read(CORE_STORE),raw=JSON.stringify(now);if(raw!==last){last=raw;if(now){const queued=stamp(now);localStorage.setItem(QUEUE,JSON.stringify(queued));refresh();if(navigator.onLine)setTimeout(()=>sync(),150)}}},350)}
-new MutationObserver(()=>restoreClockLayout()).observe(document.documentElement,{childList:true,subtree:true});
-window.addEventListener('online',()=>sync());window.addEventListener('offline',refresh);document.addEventListener('visibilitychange',()=>{if(!document.hidden)sync()});
-window.PanoramaPersonalSync={sync:()=>sync(),status:()=>({online:navigator.onLine,pending:hasPending()})};
-refresh();observe();sync();setInterval(()=>sync(),POLL);
+/* Panorama Personal — safe sync. */
+(()=>{'use strict';
+const C=window.PANORAMA_SUPABASE,S='panorama_cafe_personal_v1',Q=['panorama_personal_pending_v5','panorama_personal_pending_v4'],B='panorama_personal_sync_base_v1',R='panorama_personal_recovery_v1',ROW='personal-main',P=4000;let busy=false,applying=false,last='';
+const cp=x=>x==null?x:JSON.parse(JSON.stringify(x)),rd=k=>{try{return JSON.parse(localStorage.getItem(k)||'null')}catch{return null}},wr=(k,v)=>localStorage.setItem(k,JSON.stringify(v)),eq=(a,b)=>JSON.stringify(a)===JSON.stringify(b);
+function msg(t,c){let e=document.getElementById('panoramaSyncStatus');if(!e){e=document.createElement('div');e.id='panoramaSyncStatus';e.style.cssText='position:fixed;right:12px;bottom:12px;z-index:9999;padding:8px 11px;border-radius:999px;background:#fff;border:1px solid #ddd;font:800 11px system-ui';document.body.append(e)}e.textContent=t;e.style.color=c==='ok'?'#16803a':c==='off'?'#a56700':'#b36b00'}
+const pend=()=>Q.some(k=>!!rd(k));function refresh(){msg(navigator.onLine?(pend()?'● Pendiente de sincronizar':'● Sincronizado'):'● Sin conexión',navigator.onLine?(pend()?'wait':'ok'):'off')}
+function arr(a,b){const o=[],m=new Map();for(const x of b||[]){const k=x?.id?'i:'+x.id:'r:'+JSON.stringify(x);if(!m.has(k)){m.set(k,o.length);o.push(cp(x))}}for(const x of a||[]){const k=x?.id?'i:'+x.id:'r:'+JSON.stringify(x);if(m.has(k))o[m.get(k)]=cp(x);else{m.set(k,o.length);o.push(cp(x))}}return o}
+function obj(a,b){return {...cp(b||{}),...cp(a||{})}}
+function tomb(...ss){const o={};for(const s of ss){for(const[t,m]of Object.entries(s?._deleted||{})){o[t]??={};for(const[k,v]of Object.entries(m||{}))o[t][k]=Math.max(+o[t][k]||0,+v||0)}}return o}
+function clean(d){d=cp(d)||{};for(const[t,m]of Object.entries(d._deleted||{}))if(Array.isArray(d[t]))d[t]=d[t].filter(x=>!m?.[String(x?.id)]);return d}
+function merge(l,r,base){if(!l)return clean(r);if(!r)return clean(l);if(!base){const o=cp(r);for(const k of ['employees','sessions','payments'])o[k]=arr(l[k],r[k]);for(const k of ['payrollPeriods','weekFinalizations','approvals'])o[k]=obj(l[k],r[k]);o._deleted=tomb(r,l);if(l.adminPin)o.adminPin=l.adminPin;return clean(o)}const o=cp(r);for(const k of ['employees','sessions','payments']){const bm=new Map((base[k]||[]).filter(x=>x?.id).map(x=>[String(x.id),x])),lm=new Map((l[k]||[]).filter(x=>x?.id).map(x=>[String(x.id),x])),rm=new Map((r[k]||[]).filter(x=>x?.id).map(x=>[String(x.id),x]));for(const id of new Set([...bm.keys(),...lm.keys(),...rm.keys()])){const bv=bm.get(id),lv=lm.get(id);if(!eq(lv,bv)){if(lv===undefined)rm.delete(id);else rm.set(id,cp(lv))}}o[k]=[...rm.values()]}for(const k of ['payrollPeriods','weekFinalizations','approvals']){const bm=base[k]||{},lm=l[k]||{},rm=r[k]||{},x=cp(rm);for(const id of new Set([...Object.keys(bm),...Object.keys(lm),...Object.keys(rm)]))if(!eq(lm[id],bm[id])){if(lm[id]===undefined)delete x[id];else x[id]=cp(lm[id])}o[k]=x}o._deleted=tomb(r,l);if(!eq(l.adminPin,base.adminPin))o.adminPin=l.adminPin;return clean(o)}
+function locals(){const xs=[rd(S),...Q.map(rd)].filter(Boolean);if(!xs.length)return null;let x=xs[0];for(let i=1;i<xs.length;i++)x=merge(xs[i],x);return x}
+function recover(d){try{wr(R,{at:new Date().toISOString(),data:cp(d)})}catch(e){console.warn('recovery',e)}}
+function apply(d){if(!d||typeof d!=='object')return;applying=true;try{recover(d);window.db=d;wr(S,d);last=JSON.stringify(d);if(typeof renderAll==='function')renderAll();window.dispatchEvent(new CustomEvent('panorama-core-personal-remote-update',{detail:{data:d}}))}finally{setTimeout(()=>applying=false,0)}}
+function layout(){const r=document.getElementById('reloj'),c=r?.querySelector('.clock-home'),w=document.getElementById('workingNowList')?.closest('.card');if(!r||!c||!w||r.querySelector('.clock-workspace'))return;if(!r.querySelector('.clock-workspace')){const x=document.createElement('div');x.className='clock-workspace';r.insertBefore(x,c);x.append(c,w)}if(!document.getElementById('panorama-clock-layout')){const s=document.createElement('style');s.id='panorama-clock-layout';s.textContent='.clock-workspace{display:grid;grid-template-columns:minmax(360px,1fr) minmax(300px,.72fr);gap:14px;align-items:stretch;width:100%}.clock-workspace>.card{margin-top:0}.clock-workspace>.clock-home{max-width:none;margin:0}.clock-workspace #workingNowList{display:flex;flex-direction:column;gap:8px}@media(max-width:900px){.clock-workspace{grid-template-columns:1fr}}';document.head.append(s)}}
+if(!C?.url||!C?.key){refresh();return}const H={apikey:C.key,Authorization:'Bearer '+C.key,'Content-Type':'application/json'};
+async function get(){const r=await fetch(C.url+'/rest/v1/panorama_personal_state?id=eq.'+encodeURIComponent(ROW)+'&select=data',{headers:H,cache:'no-store'});if(!r.ok)throw Error(await r.text());return(await r.json())[0]||null}
+async function put(d){const r=await fetch(C.url+'/rest/v1/panorama_personal_state?on_conflict=id',{method:'POST',headers:{...H,Prefer:'resolution=merge-duplicates,return=representation'},body:JSON.stringify({id:ROW,data:d})});if(!r.ok)throw Error(await r.text());return(await r.json())[0]||null}
+async function payments(d){const em=new Map((d?.employees||[]).map(e=>[String(e.id),e]));for(const p of d?.payments||[])if(p?.id&&p?.employeeId&&Number.isFinite(+p.amount)){const e=em.get(String(p.employeeId))||{};const r=await fetch(C.url+'/rest/v1/panorama_payroll_payments?on_conflict=id',{method:'POST',headers:{...H,Prefer:'resolution=merge-duplicates,return=minimal'},body:JSON.stringify({id:String(p.id),source:'personal',employee_id:String(p.employeeId),employee_name:String(e.name||p.employeeName||''),amount:+p.amount,paid_date:String(p.paidDate||p.date||'').slice(0,10)||null,period_start:p.periodStart||null,period_end:p.periodEnd||null,note:p.note||'',account:p.account||null,updated_at:new Date().toISOString()})});if(!r.ok)throw Error(await r.text())}}
+async function sync(){if(busy||applying||!navigator.onLine)return false;busy=true;try{const l=locals(),b=rd(B),row=await get(),r=row?.data||null,m=merge(l,r,b);if(!m)return true;const change=!r||!eq(m,r);if(change){const saved=await put({...m,_sync:{...(m._sync||{}),updatedAt:new Date().toISOString()}}),d=saved?.data||m;apply(d);try{await payments(d)}catch(e){console.warn('payments',e)}}else if(!eq(m,l))apply(m);for(const k of Q)localStorage.removeItem(k);wr(B,rd(S)||m);refresh();return true}catch(e){console.warn('sync pending',e);refresh();return false}finally{busy=false;refresh()}}
+layout();new MutationObserver(layout).observe(document.documentElement,{childList:true,subtree:true});addEventListener('online',sync);addEventListener('offline',refresh);document.addEventListener('visibilitychange',()=>{if(!document.hidden)sync()});window.PanoramaPersonalSync={sync,status:()=>({online:navigator.onLine,pending:pend(),recovery:!!rd(R)})};refresh();setInterval(()=>sync(),P);sync();
 })();
