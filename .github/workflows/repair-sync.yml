@@ -1,0 +1,21 @@
+name: Repair Panorama Personal sync
+on:
+  push:
+    paths:
+      - '.github/workflows/repair-sync.yml'
+permissions:
+  contents: write
+jobs:
+  repair:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Replace sync engine
+        shell: bash
+        run: |
+          python3 - <<'PY'
+          import base64
+          s='''LyoqIFBhbm9yYW1hIFBlcnNvbmFsIOKAlCBzYWZlIHN5bmMuICovCg=='''
+          # placeholder replaced by a later commit
+          PY
+          echo 'Repair workflow installed.'
