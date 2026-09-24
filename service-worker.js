@@ -1,4 +1,4 @@
-const CACHE_NAME='panorama-personal-offline-v11';
+const CACHE_NAME='panorama-personal-offline-v12';
 const APP_SHELL=['./','./index.html','./manifest.json','./supabase-config.js','./panorama-session.js','./panorama-auth.js','./panorama-core-integration.js','./rescate.html','./icons/icon-192.svg','./icons/icon-512.svg','./icons/icon-192.png','./icons/icon-512.png','./icons/apple-touch-icon.png'];
 self.addEventListener('install',event=>event.waitUntil((async()=>{const cache=await caches.open(CACHE_NAME);for(const url of APP_SHELL){try{await cache.add(url)}catch(error){console.warn('Offline shell',url,error)}}await self.skipWaiting()})()));
 self.addEventListener('activate',event=>event.waitUntil((async()=>{const keys=await caches.keys();await Promise.all(keys.filter(key=>key!==CACHE_NAME).map(key=>caches.delete(key)));await self.clients.claim()})()));
