@@ -1,40 +1,59 @@
-/* Panorama Personal — isolated payment bridge.
-   Compatibility filename retained. This file mirrors Personal payments to the
-   shared payroll table. It NEVER deletes remote payment rows. */
+/* Panorama Personal — puente de pagos hacia Finanzas (nombre de archivo conservado por compatibilidad).
+   Único publicador de pagos a panorama_payroll_payments. Nunca borra filas remotas.
+   Si supabase-config.js define softDelete:true (y la tabla tiene la columna deleted_at, ver docs/),
+   los pagos eliminados en Personal se marcan con deleted_at en lugar de quedarse como fantasmas. */
 (function(){
 'use strict';
-const cfg=()=>window.PANORAMA_SUPABASE;
-let lastSignature='';
-const currentState=()=>window.db||((typeof db!=='undefined')?db:null);
+const cfg=()=>window.PANORAMA_SUPABASE,TOMB='panorama_personal_payment_tombstones';
+let lastSignature='',busy=false;
+const getDB=()=>(typeof window.__panoramaGetDB==='function'?window.__panoramaGetDB():window.db)||null;
+const rd=k=>{try{return JSON.parse(localStorage.getItem(k)||'null')}catch{return null}};
 async function request(path,opt={}){
   const c=cfg();
   if(!c?.url||!c?.key||!navigator.onLine)throw new Error('offline');
-  const r=await fetch(c.url+'/rest/v1/'+path,{...opt,headers:{apikey:c.key,Authorization:'Bearer '+c.key,'Content-Type':'application/json',...(opt.headers||{})},cache:'no-store'});
+  const r=await fetch(c.url+'/rest/v1/'+path,{...opt,headers:window.PanoramaAuth?await window.PanoramaAuth.headers(opt.headers):{apikey:c.key,Authorization:'Bearer '+c.key,'Content-Type':'application/json',...(opt.headers||{})},cache:'no-store'});
   if(!r.ok)throw new Error(await r.text());
   return r;
 }
-async function publish(p){
-  const state=currentState(),emp=(state?.employees||[]).find(e=>String(e.id)===String(p.employeeId))||{};
-  await request('panorama_payroll_payments?on_conflict=id',{method:'POST',headers:{Prefer:'resolution=merge-duplicates'},body:JSON.stringify({id:String(p.id),source:'personal',employee_id:String(p.employeeId),employee_name:String(emp.name||p.employeeName||''),amount:Number(p.amount),paid_date:p.paidDate||p.date||null,period_start:p.periodStart||null,period_end:p.periodEnd||null,note:p.note||'',account:p.account||null,updated_at:new Date().toISOString()})});
+const valid=p=>p&&p.id&&p.employeeId&&Number.isFinite(+p.amount);
+function toRow(p,emps){
+  const e=emps.get(String(p.employeeId))||{};
+  return {id:String(p.id),source:'personal',employee_id:String(p.employeeId),employee_name:String(e.name||p.employeeName||''),amount:Number(p.amount),paid_date:String(p.paidDate||p.date||'').slice(0,10)||null,period_start:p.periodStart||null,period_end:p.periodEnd||null,note:p.note||'',account:p.account||null,updated_at:new Date().toISOString()};
+}
+async function flushDeleted(){
+  if(cfg()?.softDelete!==true)return;
+  const ids=rd(TOMB)||[];
+  if(!ids.length)return;
+  await request('panorama_payroll_payments?id=in.('+ids.map(encodeURIComponent).join(',')+')',{method:'PATCH',headers:{Prefer:'return=minimal'},body:JSON.stringify({deleted_at:new Date().toISOString()})});
+  localStorage.removeItem(TOMB);
 }
 async function reconcile(){
-  const state=currentState(),payments=(state?.payments||[]).filter(p=>p?.id&&p.type==='payment');
-  const signature=JSON.stringify(payments.map(p=>[p.id,p.amount,p.paidDate,p.periodStart,p.periodEnd,p.employeeId]));
+  if(busy)return;
+  const state=getDB();
+  if(!state)return;
+  const payments=(state.payments||[]).filter(valid);
+  const signature=JSON.stringify(payments.map(p=>[p.id,p.amount,p.paidDate,p.periodStart,p.periodEnd,p.employeeId,p.note]))+JSON.stringify((rd(TOMB)||[]));
   if(signature===lastSignature)return;
+  busy=true;
   try{
-    for(const p of payments)await publish(p);
+    const emps=new Map((state.employees||[]).map(e=>[String(e.id),e]));
+    for(let i=0;i<payments.length;i+=100){
+      await request('panorama_payroll_payments?on_conflict=id',{method:'POST',headers:{Prefer:'resolution=merge-duplicates,return=minimal'},body:JSON.stringify(payments.slice(i,i+100).map(p=>toRow(p,emps)))});
+    }
+    await flushDeleted();
     lastSignature=signature;
     window.dispatchEvent(new CustomEvent('panorama-payment-bridge-sync',{detail:{count:payments.length}}));
   }catch(e){console.warn('Puente Personal→Finanzas pendiente',e)}
+  finally{busy=false}
 }
-setTimeout(()=>{
-  const original=window.savePayment;
-  if(typeof original==='function'&&!original.__panoramaBridge){
-    window.savePayment=function(){const out=original.apply(this,arguments);setTimeout(reconcile,0);return out};
-    window.savePayment.__panoramaBridge=true;
-  }
-  reconcile();
-  setInterval(reconcile,4000);
-  window.addEventListener('online',reconcile);
-},0);
+function markDeleted(id){
+  if(cfg()?.softDelete!==true)return;
+  const ids=rd(TOMB)||[];
+  if(!ids.includes(String(id)))ids.push(String(id));
+  localStorage.setItem(TOMB,JSON.stringify(ids));
+  setTimeout(reconcile,0);
+}
+window.PanoramaPaymentBridge={reconcile,markDeleted};
+['panorama-local-saved','panorama-core-personal-remote-update','online'].forEach(ev=>window.addEventListener(ev,()=>setTimeout(reconcile,300)));
+setTimeout(()=>{reconcile();setInterval(reconcile,4000)},0);
 })();

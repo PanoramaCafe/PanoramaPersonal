@@ -53,7 +53,8 @@ tfoot td{font-weight:900}
 .stat{background:#f7f5ef;padding:13px;border-radius:13px}
 .num{font-size:25px;font-weight:900}
 @media(max-width:800px){.grid{grid-template-columns:1fr}.meta{grid-template-columns:1fr}}
-.notice.warning{background:#fff3cd;border-color:#f0d98a;color:#5f4b00}\n.clockcard{text-align:center;max-width:520px;margin:0 auto}.clockicon{font-size:46px;margin-bottom:6px}.pin-input{display:block;width:100%;max-width:280px;margin:18px auto 10px;text-align:center;font-size:28px;letter-spacing:.25em;padding:12px}.big{min-width:220px;padding:12px 18px}.notice.warning{background:#fff3cd;border-color:#f0d98a;color:#5f4b00}
+.notice.warning{background:#fff3cd;border-color:#f0d98a;color:#5f4b00}
+.clockcard{text-align:center;max-width:520px;margin:0 auto}.clockicon{font-size:46px;margin-bottom:6px}.pin-input{display:block;width:100%;max-width:280px;margin:18px auto 10px;text-align:center;font-size:28px;letter-spacing:.25em;padding:12px}.big{min-width:220px;padding:12px 18px}.notice.warning{background:#fff3cd;border-color:#f0d98a;color:#5f4b00}
 
 .working-list{display:flex;flex-wrap:wrap;gap:8px}
 .working-person{padding:9px 12px;border:1px solid var(--line);border-radius:10px;background:#f7faf7}
@@ -79,13 +80,14 @@ tfoot td{font-weight:900}
 
 
 .payroll-chart{display:flex;align-items:flex-end;gap:10px;min-height:240px;margin-top:12px;padding:16px 8px 0;border-bottom:1px solid var(--line);overflow-x:auto}.chart-bar-group{min-width:58px;flex:1;max-width:110px;display:flex;flex-direction:column;align-items:center;justify-content:flex-end;height:220px}.chart-bar-value{font-size:12px;font-weight:800;margin-bottom:5px;white-space:nowrap}.chart-bar{width:min(54px,75%);min-height:2px;background:#2d2926;border-radius:8px 8px 0 0;transition:height .2s}.chart-bar-label{font-size:11px;text-align:center;margin-top:7px;line-height:1.2;color:#666;min-height:28px}.chart-empty{padding:35px 10px;color:#777;text-align:center;border:1px dashed var(--line);border-radius:10px;margin-top:12px}
+.muted{color:var(--muted)}.hidden{display:none!important}.form-grid{display:grid;grid-template-columns:1fr 1fr;gap:10px}
 </style>
   <link rel="manifest" href="manifest.json">
-  <meta name="theme-color" content="#2d2926">
+  <link rel="apple-touch-icon" href="icons/apple-touch-icon.png">
   <meta name="apple-mobile-web-app-capable" content="yes">
   <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
   <meta name="apple-mobile-web-app-title" content="Panorama Personal">
-<!-- PANORAMA PERSONAL · V1.13 PWA -->
+<!-- PANORAMA PERSONAL · V1.19 PWA -->
 </head>
 <body><div class="app">
 <header class="header">
@@ -144,7 +146,7 @@ tfoot td{font-weight:900}
     </div>
     <div id="dashCustomRange" class="hidden" style="margin-top:10px"><div class="form-grid"><div><label>Desde</label><input type="date" id="dashStart" onchange="renderDashboard()"></div><div><label>Hasta</label><input type="date" id="dashEnd" onchange="renderDashboard()"></div></div></div>
     <div class="stats" style="margin-top:12px">
-      <div class="stat"><div class="num" id="dashTotal">$0.00</div><div class="muted">Nómina pagada</div></div>
+      <div class="stat"><div class="num" id="dashTotal">$0.00</div><div class="muted">Pagado (nómina + bonos)</div></div>
       <div class="stat"><div class="num" id="dashGenerated">$0.00</div><div class="muted">Nómina generada</div></div>
       <div class="stat"><div class="num" id="dashPending">$0.00</div><div class="muted">Pendiente de pago</div></div>
       <div class="stat"><div class="num" id="dashCount">0</div><div class="muted">Pagos registrados</div></div>
@@ -194,17 +196,19 @@ tfoot td{font-weight:900}
   <div class="card">
     <h2 style="margin-top:0">⚙️ Ajustes</h2>
     <div class="actions">
+      <button onclick="PanoramaAuth.openLogin()">🔐 Sesión de la nube</button>
       <button onclick="changeAdminPin()">🔑 Cambiar PIN de administrador</button>
       <button onclick="exportBackupJSON()">💾 Exportar respaldo (JSON)</button>
       <label style="margin:0"><input type="file" id="importFile" accept="application/json" style="display:none" onchange="importBackupJSON(event)"><button onclick="document.getElementById('importFile').click()" type="button">📥 Importar respaldo</button></label>
       <button class="danger" onclick="resetAllData()">🧹 Borrar todos los datos</button>
     </div>
+    <div class="muted" id="cloudAuthStatus" style="margin-top:8px"></div>
   </div>
 </section>
 
 <div id="modal" class="modal hidden"><div class="modalbox" id="modalBox"></div></div>
 <div id="toast"></div>
-<footer class="muted" style="text-align:center;padding:18px;font-size:12px">Panorama Café · Personal V1.17 · Revisión y pagos independientes</footer>
+<footer class="muted" style="text-align:center;padding:18px;font-size:12px">Panorama Café · Personal V1.19 · Revisión y pagos independientes</footer>
 </div>
 
 <script>
@@ -217,20 +221,27 @@ function fmtTime(iso){return new Date(iso).toLocaleTimeString("es-MX",{hour:"2-d
 function fmtDateShort(d){return d.toLocaleDateString("es-MX",{day:"2-digit",month:"short"})}
 
 function blankDB(){return {employees:[],sessions:[],payments:[],approvals:{},weekFinalizations:{},payrollPeriods:{},adminPin:"1234"}}
+function normalizeDB(data){
+  const d=(data&&typeof data==="object")?data:{};
+  const obj=x=>(x&&typeof x==="object"&&!Array.isArray(x))?x:{};
+  return {...blankDB(),...d,employees:Array.isArray(d.employees)?d.employees:[],sessions:Array.isArray(d.sessions)?d.sessions:[],payments:Array.isArray(d.payments)?d.payments:[],approvals:obj(d.approvals),weekFinalizations:obj(d.weekFinalizations),payrollPeriods:obj(d.payrollPeriods),adminPin:/^\d{4}$/.test(String(d.adminPin||""))?String(d.adminPin):"1234"};
+}
 function load(){
-  try{
-    const saved=localStorage.getItem(STORE);
-    if(saved){
-      const data=JSON.parse(saved),base=blankDB();
-      return {...base,...data,employees:Array.isArray(data.employees)?data.employees:[],sessions:Array.isArray(data.sessions)?data.sessions:[],payments:Array.isArray(data.payments)?data.payments:[],approvals:(data.approvals&&typeof data.approvals==="object")?data.approvals:{},weekFinalizations:(data.weekFinalizations&&typeof data.weekFinalizations==="object")?data.weekFinalizations:{},payrollPeriods:(data.payrollPeriods&&typeof data.payrollPeriods==="object")?data.payrollPeriods:{},adminPin:/^\d{4}$/.test(String(data.adminPin||""))?String(data.adminPin):"1234"};
-    }
-  }catch(e){console.warn("No se pudo leer la base local",e)}
+  try{const saved=localStorage.getItem(STORE);if(saved)return normalizeDB(JSON.parse(saved))}
+  catch(e){console.warn("No se pudo leer la base local",e)}
   return blankDB();
 }
-let db=load();
+let db=load(),dbVersion=0;
+/* Puente con la sincronización: el sync lee y reemplaza ESTE mismo db (antes escribía en window.db, otra copia). */
+window.__panoramaGetDB=()=>db;
+window.__panoramaSetDB=d=>{db=normalizeDB(d)};
+window.__panoramaVersion=()=>dbVersion;
 function save(){
-  try{localStorage.setItem(STORE,JSON.stringify(db));renderAll()}
-  catch(e){alert("No se pudo guardar la información en el dispositivo.");console.error(e)}
+  dbVersion++;
+  try{localStorage.setItem(STORE,JSON.stringify(db))}
+  catch(e){alert("No se pudo guardar la información en el dispositivo.");console.error(e);return}
+  try{renderAll()}catch(e){console.error("Error al dibujar la pantalla",e)}
+  window.dispatchEvent(new Event("panorama-local-saved"));
 }
 
 function showView(id){
@@ -257,9 +268,9 @@ function pinPress(d){
   if(pinBuffer.length===4){
     setTimeout(()=>{
       const ok=pinCallback(pinBuffer);
-      if(!ok){
+      if(ok!==true){
         const err=document.getElementById("pinError");
-        if(err)err.textContent="PIN incorrecto";
+        if(err)err.textContent=(typeof ok==="string"&&ok)||"PIN incorrecto";
         pinBuffer="";
         const dots=document.getElementById("pinDots");
         if(dots)dots.innerHTML=renderDots();
@@ -309,13 +320,6 @@ function pinSubmit(){
   setTimeout(()=>{msg.textContent=""},3500);
 }
 
-function openEmp(id){
-  const emp=db.employees.find(e=>e.id===id);if(!emp)return;
-  openPinPad(emp.name,"Ingresa tu PIN para marcar",(pin)=>{
-    if(pin!==emp.pin)return false;
-    doClock(emp);closeModal();return true;
-  });
-}
 function doClock(emp){
   const open=db.sessions.find(s=>s.employeeId===emp.id&&!s.salida);
   const now=new Date();
@@ -364,8 +368,12 @@ function openAdmin(){
   });
 }
 function changeAdminPin(){
-  openPinPad("Nuevo PIN","Escribe el nuevo PIN de administrador (4 dígitos)",(pin)=>{
-    db.adminPin=pin;save();closeModal();showToast("PIN de administrador actualizado");return true;
+  openPinPad("Nuevo PIN","Escribe el nuevo PIN de administrador (4 dígitos)",(first)=>{
+    setTimeout(()=>openPinPad("Confirma el PIN","Escríbelo otra vez para confirmar",(second)=>{
+      if(second!==first)return "Los PIN no coinciden. Inténtalo de nuevo.";
+      db.adminPin=first;save();closeModal();showToast("PIN de administrador actualizado");return true;
+    }),0);
+    return true;
   });
 }
 
@@ -512,32 +520,8 @@ let dashPeriodValue="month";
 function onDashPeriodChange(){dashPeriodValue=document.getElementById("dashPeriod").value;const c=document.getElementById("dashCustomRange");if(c)c.classList.toggle("hidden",dashPeriodValue!=="custom");renderDashboard()}
 function dashRange(){const now=new Date();let start=null,end=localDateKey(now);if(dashPeriodValue==="week"){const d=new Date(now);d.setDate(d.getDate()-((d.getDay()+6)%7));start=localDateKey(d);const e=new Date(d);e.setDate(e.getDate()+6);end=localDateKey(e)}else if(dashPeriodValue==="month")start=localDateKey(new Date(now.getFullYear(),now.getMonth(),1));else if(dashPeriodValue==="custom"){start=document.getElementById("dashStart")?.value||null;end=document.getElementById("dashEnd")?.value||end}return {start,end}}
 function moneyShort(n){n=Number(n)||0;return n>=1000?"$"+(n/1000).toFixed(n>=10000?0:1)+"k":"$"+n.toFixed(0)}
-function dashboardBuckets(start,end){const buckets=[];if(!start||!end)return buckets;const a=new Date(start+"T12:00:00"),b=new Date(end+"T12:00:00");if(dashPeriodValue==="week"||dashPeriodValue==="month"||dashPeriodValue==="custom"){for(let d=new Date(a);d<=b;d.setDate(d.getDate()+7)){const bs=localDateKey(d),be=new Date(d);be.setDate(be.getDate()+6);buckets.push({key:bs,start:bs,end:localDateKey(be),label:bs.slice(5)})}}else{const months=new Map();db.payments.forEach(p=>months.set(p.paidDate.slice(0,7),true));return [...months.keys()].sort().map(k=>({key:k,start:k+"-01",end:k+"-31",label:k.slice(0,4)+"\n"+k.slice(5)}))}return buckets}
+function dashboardBuckets(start,end){const buckets=[];if(!start||!end)return buckets;const a=new Date(start+"T12:00:00"),b=new Date(end+"T12:00:00");if(dashPeriodValue==="week"||dashPeriodValue==="month"||dashPeriodValue==="custom"){for(let d=new Date(a);d<=b;d.setDate(d.getDate()+7)){const bs=localDateKey(d),be=new Date(d);be.setDate(be.getDate()+6);buckets.push({key:bs,start:bs,end:localDateKey(be),label:bs.slice(5)})}}else{const months=new Map();db.payments.forEach(p=>{if(p.paidDate)months.set(String(p.paidDate).slice(0,7),true)});return [...months.keys()].sort().map(k=>({key:k,start:k+"-01",end:k+"-31",label:k.slice(0,4)+"\n"+k.slice(5)}))}return buckets}
 function renderDashboard(){const sel=document.getElementById("dashPeriod");if(sel)sel.value=dashPeriodValue;const {start,end}=dashRange();const inRange=p=>p.paidDate&&(!start||p.paidDate>=start)&&(!end||p.paidDate<=end);const paid=db.payments.filter(inRange);const total=paid.reduce((a,p)=>a+Number(p.amount||0),0);const generated=db.sessions.filter(sessionCountsForPayroll).filter(s=>{const k=localDateKey(new Date(s.entrada));return (!start||k>=start)&&(!end||k<=end)}).reduce((a,s)=>a+sessionPay(s),0);const pending=db.employees.reduce((a,e)=>a+employeePaymentSummary(e.id).pending,0);document.getElementById("dashTotal").textContent="$"+total.toFixed(2);document.getElementById("dashGenerated").textContent="$"+generated.toFixed(2);document.getElementById("dashPending").textContent="$"+pending.toFixed(2);document.getElementById("dashCount").textContent=paid.length;const buckets=dashboardBuckets(start,end);const vals=buckets.map(b=>paid.filter(p=>p.paidDate>=b.start&&p.paidDate<=b.end).reduce((a,p)=>a+Number(p.amount||0),0));const max=Math.max(...vals,0);document.getElementById("dashChartLabel").textContent=start?`${start} a ${end}`:"Agrupado por mes según fecha de pago";const chart=document.getElementById("dashChart");chart.innerHTML=!vals.length?'<div class="chart-empty">Selecciona un periodo para visualizar los pagos.</div>':vals.every(v=>v===0)?'<div class="chart-empty">No hay pagos de nómina registrados en este periodo.</div>':buckets.map((b,i)=>`<div class="chart-bar-group"><div class="chart-bar-value">${moneyShort(vals[i])}</div><div class="chart-bar" style="height:${Math.max(2,(vals[i]/max)*180)}px" title="$${vals[i].toFixed(2)}"></div><div class="chart-bar-label">${b.label.replace("\n","<br>")}</div></div>`).join("");const byEmp={};paid.forEach(p=>{byEmp[p.employeeId]=(byEmp[p.employeeId]||0)+Number(p.amount||0)});const rows=db.employees.map(e=>({name:e.name,total:byEmp[e.id]||0})).filter(r=>r.total>0).sort((a,b)=>b.total-a.total);document.getElementById("dashByEmp").innerHTML=rows.length?`<h3 style="margin-bottom:6px">Pagado por trabajador</h3><table><thead><tr><th>Trabajador</th><th>Total pagado</th></tr></thead><tbody>${rows.map(r=>`<tr><td>${esc(r.name)}</td><td>$${r.total.toFixed(2)}</td></tr>`).join("")}</tbody></table>`:""}
-let corePaymentStatusRefreshInFlight=false;
-async function syncCorePaymentStatuses(){
-  if(corePaymentStatusRefreshInFlight||!window.PanoramaCore?.paymentStatus)return;
-  const periods=Object.values(db.payrollPeriods||{}).filter(p=>p?.snapshot?.employees?.length);
-  if(!periods.length)return;
-  corePaymentStatusRefreshInFlight=true;
-  try{
-    let changed=false;
-    for(const period of periods){
-      period.corePaymentStatuses=period.corePaymentStatuses||{};
-      for(const line of period.snapshot.employees){
-        const rows=await window.PanoramaCore.paymentStatus(period.id,line.employeeId);
-        const status=rows?.[0];
-        if(status&&period.corePaymentStatuses[line.employeeId]?.status!==status.status){
-          period.corePaymentStatuses[line.employeeId]={id:status.id,status:status.status};
-          changed=true;
-        }
-      }
-    }
-    if(changed){localStorage.setItem(STORE,JSON.stringify(db));renderPayroll();renderPayments();}
-  }catch(error){console.warn("No se pudieron actualizar los estados de pago",error);}
-  finally{corePaymentStatusRefreshInFlight=false;}
-}
-window.addEventListener("panorama-core-personal-ready",()=>syncCorePaymentStatuses());
 
 function addDaysKey(dateKey,n){const d=new Date(dateKey+"T00:00:00");d.setDate(d.getDate()+n);return localDateKey(d)}
 function lastPaidThrough(employeeId,excludeId=null){
@@ -659,12 +643,17 @@ function openBonusForm(employeeId=null,paymentId=null){
   openModal(`<div class="modalhead"><div><h2 style="margin:0">🎁 ${paymentId?"Editar bono":"Registrar bono / dinero extra"}</h2><div class="muted">Movimiento independiente de la nómina.</div></div><button class="close" onclick="closeModal()">✕</button></div><label>Trabajador</label><select id="bonusEmp">${db.employees.map(e=>`<option value="${e.id}" ${e.id===selected?"selected":""}>${esc(e.name)}</option>`).join("")}</select><label>Monto (MXN)</label><input id="bonusAmount" type="number" min="0" step="0.01" value="${p?Number(p.amount||0).toFixed(2):""}"><label>Fecha</label><input id="bonusDate" type="date" value="${p?.paidDate||todayKey()}"><label>Motivo / nota (opcional)</label><input id="bonusNote" value="${esc(p?.note||"")}"><div class="actions"><button onclick="closeModal()">Cancelar</button><button class="primary" onclick="saveBonus()">Guardar bono</button></div>`);
 }
 function saveBonus(){const employeeId=document.getElementById("bonusEmp").value,amount=Number(document.getElementById("bonusAmount").value),paidDate=document.getElementById("bonusDate").value,note=document.getElementById("bonusNote").value;if(!employeeId||!amount||amount<=0||!paidDate){alert("Completa trabajador, monto y fecha.");return}const payload={employeeId,amount,paidDate,note,type:"bonus",payrollAmount:0,bonusAmount:amount,periodStart:null,periodEnd:null,allocations:[]};if(payFormId){const row=db.payments.find(x=>x.id===payFormId);if(row)Object.assign(row,payload)}else db.payments.unshift({id:crypto.randomUUID(),...payload});closeModal();save();showToast("Bono / dinero extra registrado");}
-function deletePayment(id){if(!confirm("¿Eliminar este pago del historial?"))return;const p=db.payments.find(x=>x.id===id);db.payments=db.payments.filter(x=>x.id!==id);if(p?.payrollPeriodId)updatePayrollPeriodPaymentStatus(p.payrollPeriodId);closeModal();save()}
+function deletePayment(id){
+  if(!confirm("¿Eliminar este pago del historial?"))return;
+  db.payments=db.payments.filter(x=>x.id!==id);
+  try{window.PanoramaPaymentBridge?.markDeleted(id)}catch(e){console.warn(e)}
+  closeModal();save();
+}
 function exportPaymentsCSV(){
-  let csv="Trabajador,Cubre desde,Cubre hasta,Monto,Fecha de pago,Nota\n";
-  db.payments.slice().sort((a,b)=>a.paidDate.localeCompare(b.paidDate)).forEach(p=>{
+  let csv=csvRow(["Trabajador","Tipo","Cubre desde","Cubre hasta","Monto","Fecha de pago","Nota"]);
+  db.payments.slice().sort((a,b)=>String(a.paidDate||"").localeCompare(String(b.paidDate||""))).forEach(p=>{
     const emp=db.employees.find(e=>e.id===p.employeeId);
-    csv+=`${emp?emp.name:"?"},${p.periodStart},${p.periodEnd},${Number(p.amount).toFixed(2)},${p.paidDate},"${(p.note||"").replace(/"/g,'""')}"\n`;
+    csv+=csvRow([emp?emp.name:"?",p.type==="bonus"?"Bono":"Pago",p.periodStart||"",p.periodEnd||"",Number(p.amount||0).toFixed(2),p.paidDate||"",p.note||""]);
   });
   downloadBlob(csv,`historial_pagos_${todayKey()}.csv`,"text/csv");
 }
@@ -741,48 +730,54 @@ function renderSessionList(){
 
 /* ---------- Export / backup ---------- */
 function downloadBlob(content,filename,type){
-  const blob=new Blob([content],{type});
+  const blob=new Blob([type==="text/csv"?"\ufeff"+content:content],{type:type+";charset=utf-8"});
   const a=document.createElement("a");
-  a.href=URL.createObjectURL(blob);a.download=filename;a.click();
-  URL.revokeObjectURL(a.href);
+  a.href=URL.createObjectURL(blob);a.download=filename;document.body.appendChild(a);a.click();a.remove();
+  setTimeout(()=>URL.revokeObjectURL(a.href),1500);
 }
+function csvCell(v){let s=String(v??"");if(/^[=+\-@]/.test(s))s="'"+s;return /[",\n\r]/.test(s)?'"'+s.replace(/"/g,'""')+'"':s}
+function csvRow(a){return a.map(csvCell).join(",")+"\n"}
 function exportWeekCSV(){
   const {start,end}=currentWeekRange();
   const inRange=sessionsInRange(start,end);
-  let csv="Trabajador,Tarifa,Horas aprobadas,Pago\n";
+  let csv=csvRow(["Trabajador","Tarifa","Horas aprobadas","Pago"]);
   db.employees.forEach(e=>{
     const s=inRange.filter(x=>x.employeeId===e.id);
     const hours=s.reduce((a,x)=>a+(sessionCountsForPayroll(x)?hoursOf(x):0),0);
     const amount=s.reduce((a,x)=>a+(sessionCountsForPayroll(x)?sessionPay(x):0),0);
-    const effectiveRate=hours>0?amount/hours:e.rate;
-    csv+=`${e.name},${effectiveRate.toFixed(2)},${hours.toFixed(2)},${amount.toFixed(2)}\n`;
+    const effectiveRate=hours>0?amount/hours:Number(e.rate)||0;
+    csv+=csvRow([e.name,effectiveRate.toFixed(2),hours.toFixed(2),amount.toFixed(2)]);
   });
-  csv+="\nRegistros detallados\nTrabajador,Fecha,Entrada,Salida,Horas aprobadas,Estado\n";
+  csv+="\n"+csvRow(["Registros detallados"])+csvRow(["Trabajador","Fecha","Entrada","Salida","Horas aprobadas","Estado"]);
   inRange.forEach(s=>{
     const emp=db.employees.find(e=>e.id===s.employeeId);
-    csv+=`${emp?emp.name:"?"},${localDateKey(new Date(s.entrada))},${fmtTime(s.entrada)},${s.salida?fmtTime(s.salida):"sin salida"},${(sessionCountsForPayroll(s)?hoursOf(s):0).toFixed(2)},${sessionStatus(s).label}\n`;
+    csv+=csvRow([emp?emp.name:"?",localDateKey(new Date(s.entrada)),fmtTime(s.entrada),s.salida?fmtTime(s.salida):"sin salida",(sessionCountsForPayroll(s)?hoursOf(s):0).toFixed(2),sessionStatus(s).label]);
   });
   downloadBlob(csv,`nomina_semana_${localDateKey(start)}.csv`,"text/csv");
 }
 function exportBackupJSON(){downloadBlob(JSON.stringify(db,null,2),`respaldo_nomina_${localDateKey(new Date())}.json`,"application/json")}
+function allowBulkSync(){localStorage.setItem("panorama_personal_allow_bulk","1")}
 function importBackupJSON(ev){
   const file=ev.target.files[0];if(!file)return;
   const reader=new FileReader();
   reader.onload=()=>{
     try{
-      const data=JSON.parse(reader.result);
-      if(!Array.isArray(data.employees)||!Array.isArray(data.sessions)){alert("El archivo no tiene el formato esperado.");return}
-      if(!confirm("Esto reemplazará los datos actuales con los del respaldo. ¿Continuar?"))return;
-      db=data;save();showToast("Respaldo importado correctamente");
+      const raw=JSON.parse(reader.result);
+      if(!raw||!Array.isArray(raw.employees)||!Array.isArray(raw.sessions)){alert("El archivo no tiene el formato esperado.");return}
+      const data=normalizeDB(raw);
+      const answer=prompt(`Respaldo: ${data.employees.length} trabajadores, ${data.sessions.length} jornadas, ${data.payments.length} pagos.\nActual: ${db.employees.length} trabajadores, ${db.sessions.length} jornadas, ${db.payments.length} pagos.\n\nEsto REEMPLAZA los datos actuales, también en la nube (Supabase). Antes se descargará una copia de lo actual.\n\nEscribe IMPORTAR para continuar:`);
+      if((answer||"").trim().toUpperCase()!=="IMPORTAR")return;
+      exportBackupJSON();allowBulkSync();db=data;save();showToast("Respaldo importado correctamente");
     }catch(e){alert("No se pudo leer el archivo.");}
   };
   reader.readAsText(file);
   ev.target.value="";
 }
 function resetAllData(){
-  if(!confirm("Esto borrará TODOS los trabajadores y registros de esta app. ¿Continuar?"))return;
-  if(!confirm("Confirma una vez más: se perderá todo el historial de horario y nómina."))return;
-  db=blankDB();save();showToast("Datos restablecidos");
+  const answer=prompt(`Esto borrará TODOS los trabajadores, jornadas y pagos (${db.employees.length} / ${db.sessions.length} / ${db.payments.length}), también en la nube (Supabase). Antes se descargará un respaldo.\n\nEscribe BORRAR TODO para continuar:`);
+  if((answer||"").trim().toUpperCase()!=="BORRAR TODO")return;
+  const pin=db.adminPin;
+  exportBackupJSON();allowBulkSync();db=blankDB();db.adminPin=pin;save();showToast("Datos restablecidos");
 }
 
 /* ---------- Modal ---------- */
@@ -820,7 +815,7 @@ renderAll();
         .catch(()=>{});
       let refreshing=false;
       navigator.serviceWorker.addEventListener("controllerchange",()=>{
-        if(!refreshing){ refreshing=true; location.reload(); }
+        const m=document.getElementById("modal");if(m&&!m.classList.contains("hidden"))return;if(!refreshing){ refreshing=true; location.reload(); }
       });
     });
   }
@@ -828,6 +823,7 @@ renderAll();
 </script>
 
 <script src="supabase-config.js"></script>
+<script src="panorama-session.js"></script>
 <script src="panorama-auth.js"></script>
 <script src="panorama-core-integration.js"></script>
 </body>
