@@ -93,7 +93,7 @@ tfoot td{font-weight:900}
   <meta name="apple-mobile-web-app-capable" content="yes">
   <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
   <meta name="apple-mobile-web-app-title" content="Panorama Personal">
-<!-- PANORAMA PERSONAL · V1.28 PWA -->
+<!-- PANORAMA PERSONAL · V1.29 PWA -->
 </head>
 <body><div class="app">
 <header class="header">
@@ -219,7 +219,7 @@ tfoot td{font-weight:900}
 
 <div id="modal" class="modal hidden"><div class="modalbox" id="modalBox"></div></div>
 <div id="toast"></div>
-<footer class="muted" style="text-align:center;padding:18px;font-size:12px">Panorama Café · Personal V1.28 · Sincronización protegida</footer>
+<footer class="muted" style="text-align:center;padding:18px;font-size:12px">Panorama Café · Personal V1.29 · Sincronización protegida</footer>
 </div>
 
 <script>
@@ -440,7 +440,8 @@ function openEmployeeForm(id){
   <label>Tarifa por hora (MXN)</label><input id="empRate" type="number" min="0" step="0.5" value="${e.rate??""}">
   <label>PIN (4 dígitos, para marcar entrada/salida)</label><input id="empPin" maxlength="4" inputmode="numeric" value="${esc(e.pin||"")}">
   ${id?`<div class="rate-note"><b>Tarifas históricas protegidas.</b> Las jornadas guardan la tarifa que tenían al registrarse. Si este cambio debe aplicarse también a jornadas ya registradas, usa la opción de abajo.</div>
-  <button type="button" onclick="applyEmployeeRateThenAdjust('${id}')">💰 Aplicar tarifa a jornadas desde una fecha</button>`:""}
+  <button type="button" onclick="applyEmployeeRateThenAdjust('${id}')">💰 Aplicar tarifa a jornadas desde una fecha</button>
+  <button type="button" onclick="openRateRepair('${id}')">🩹 Corregir tarifa aplicada por error</button>`:""}
   <div class="actions"><button onclick="closeModal()">Cancelar</button>${id?`<button class="danger" onclick="deactivateEmployee('${id}')">Desactivar</button>`:""}<button class="primary" onclick="saveEmployee('${id||""}')">Guardar</button></div>`);
 }
 function applyEmployeeRateThenAdjust(employeeId){
@@ -452,10 +453,9 @@ function applyEmployeeRateThenAdjust(employeeId){
 }
 function openRateAdjustment(employeeId){
   const e=db.employees.find(x=>x.id===employeeId);if(!e)return;
-  const first=db.sessions.filter(s=>s.employeeId===employeeId).sort((a,b)=>new Date(a.entrada)-new Date(b.entrada))[0];
-  const defaultDate=first?localDateKey(new Date(first.entrada)):todayKey();
+  const defaultDate=todayKey();
   openModal(`<div class="modalhead"><div><h2 style="margin:0">💰 Ajustar tarifa histórica</h2><div class="muted">${esc(e.name)} · tarifa actual $ ${Number(e.rate||0).toFixed(2)}/h</div></div><button class="close" onclick="closeModal()">✕</button></div>
-    <div class="rate-adjust-warning">Este ajuste cambia la tarifa guardada en las jornadas desde la fecha elegida. Las jornadas anteriores permanecen intactas. Si alguna jornada ya fue pagada, el saldo se recalculará con la nueva tarifa y podrá aparecer una diferencia pendiente.</div>
+    <div class="rate-adjust-warning">Este ajuste cambia la tarifa guardada en las jornadas DESDE la fecha elegida en adelante. El campo empieza en HOY; muévelo hacia atrás solo si de verdad quieres que la tarifa nueva aplique también a jornadas pasadas. Las jornadas anteriores a la fecha elegida no se tocan.</div>
     <label>Aplicar tarifa actual (${Number(e.rate||0).toFixed(2)}/h) desde</label>
     <input id="rateEffectiveDate" type="date" value="${defaultDate}">
     <div class="actions"><button onclick="closeModal()">Cancelar</button><button class="primary" onclick="applyRateAdjustment('${employeeId}')">Aplicar ajuste</button></div>`);
@@ -469,6 +469,26 @@ function applyRateAdjustment(employeeId){
   if(!confirm(`¿Aplicar ${Number(e.rate).toFixed(2)}/h a ${sessions.length} jornada(s) desde el ${date}? Las jornadas anteriores no cambiarán.`))return;
   sessions.forEach(s=>{const before={...s};s.rateAtEntry=Number(e.rate);recordAdjustmentIfNeeded(before,s)});
   closeModal();save();showToast(`Tarifa aplicada a ${sessions.length} jornada(s) desde ${date}`);
+}
+function openRateRepair(employeeId){
+  const e=db.employees.find(x=>x.id===employeeId);if(!e)return;
+  openModal(`<div class="modalhead"><div><h2 style="margin:0">🩹 Corregir tarifa aplicada por error</h2><div class="muted">${esc(e.name)}</div></div><button class="close" onclick="closeModal()">✕</button></div>
+  <div class="rate-adjust-warning">Usa esto SOLO para corregir jornadas a las que ya se les aplicó la tarifa equivocada. Escribe la tarifa correcta y el rango exacto de fechas a corregir.</div>
+  <label>Tarifa correcta (MXN/hora)</label><input id="repairRate" type="number" min="0" step="0.5" value="${Number(e.rate||0)}">
+  <label>Desde (inclusive)</label><input id="repairFrom" type="date">
+  <label>Hasta (inclusive)</label><input id="repairTo" type="date">
+  <div class="actions"><button onclick="closeModal()">Cancelar</button><button class="primary" onclick="applyRateRepair(\'${employeeId}\')">Corregir</button></div>`);
+}
+function applyRateRepair(employeeId){
+  const rate=Number(document.getElementById("repairRate")?.value);
+  const from=document.getElementById("repairFrom")?.value,to=document.getElementById("repairTo")?.value;
+  if(!Number.isFinite(rate)||rate<=0||!from||!to){alert("Completa la tarifa correcta y el rango de fechas (desde y hasta).");return}
+  if(to<from){alert("La fecha \'hasta\' no puede ser antes que \'desde\'.");return}
+  const sessions=db.sessions.filter(s=>s.employeeId===employeeId&&localDateKey(new Date(s.entrada))>=from&&localDateKey(new Date(s.entrada))<=to);
+  if(!sessions.length){alert("No hay jornadas de este trabajador en ese rango de fechas.");return}
+  if(!confirm(`¿Corregir ${sessions.length} jornada(s) entre el ${from} y el ${to} a $${rate.toFixed(2)}/h?\n\nSi alguna ya pertenece a una semana revisada, se guardará como ajuste pendiente para que lo decidas ahí; esa nómina no cambiará sola.`))return;
+  sessions.forEach(s=>{const before={...s};s.rateAtEntry=rate;recordAdjustmentIfNeeded(before,s)});
+  closeModal();save();showToast(`Corregidas ${sessions.length} jornada(s) a $${rate.toFixed(2)}/h entre ${from} y ${to}`);
 }
 function saveEmployee(id){
   const name=document.getElementById("empName").value.trim();
