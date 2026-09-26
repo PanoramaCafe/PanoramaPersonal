@@ -217,7 +217,7 @@ tfoot td{font-weight:900}
 
 <div id="modal" class="modal hidden"><div class="modalbox" id="modalBox"></div></div>
 <div id="toast"></div>
-<footer class="muted" style="text-align:center;padding:18px;font-size:12px">Panorama Café · Personal V1.25 · Sincronización protegida</footer>
+<footer class="muted" style="text-align:center;padding:18px;font-size:12px">Panorama Café · Personal V1.26 · Sincronización protegida</footer>
 </div>
 
 <script>
@@ -229,15 +229,39 @@ function esc(s){return String(s??"").replace(/[&<>"']/g,c=>({"&":"&amp;","<":"&l
 function fmtTime(iso){return new Date(iso).toLocaleTimeString("es-MX",{hour:"2-digit",minute:"2-digit"})}
 function fmtDateShort(d){return d.toLocaleDateString("es-MX",{day:"2-digit",month:"short"})}
 
-function blankDB(){return {employees:[],sessions:[],payments:[],approvals:{},weekFinalizations:{},payrollPeriods:{},adminPin:"1234"}}
+function blankDB(){return {employees:[],sessions:[],payments:[],approvals:{},weekFinalizations:{},payrollPeriods:{},balanceCutoffs:{},adminPin:"1234"}}
 function normalizeDB(data){
   const d=(data&&typeof data==="object")?data:{};
   const obj=x=>(x&&typeof x==="object"&&!Array.isArray(x))?x:{};
-  return {...blankDB(),...d,employees:Array.isArray(d.employees)?d.employees:[],sessions:Array.isArray(d.sessions)?d.sessions:[],payments:Array.isArray(d.payments)?d.payments:[],approvals:obj(d.approvals),weekFinalizations:obj(d.weekFinalizations),payrollPeriods:obj(d.payrollPeriods),adminPin:/^\d{4}$/.test(String(d.adminPin||""))?String(d.adminPin):"1234"};
+  return {...blankDB(),...d,employees:Array.isArray(d.employees)?d.employees:[],sessions:Array.isArray(d.sessions)?d.sessions:[],payments:Array.isArray(d.payments)?d.payments:[],approvals:obj(d.approvals),weekFinalizations:obj(d.weekFinalizations),payrollPeriods:obj(d.payrollPeriods),balanceCutoffs:obj(d.balanceCutoffs),adminPin:/^\d{4}$/.test(String(d.adminPin||""))?String(d.adminPin):"1234"};
+}
+function applyVerifiedBalanceCutoffs(d){
+  d.balanceCutoffs=d.balanceCutoffs||{};
+  const verified=[
+    {id:"2530dcff-ca33-45be-a48c-f530c789bd09",name:"Edwin",through:"2026-09-14"},
+    {id:"67d7fc5e-d77c-4023-ae11-78caeb7723cb",name:"Andrea",through:"2026-09-21"}
+  ];
+  let changed=false;
+  verified.forEach(v=>{
+    const emp=d.employees.find(e=>e.id===v.id||String(e.name||"").trim().toLowerCase()===v.name.toLowerCase());
+    if(!emp)return;
+    const key=String(emp.id);
+    if(!d.balanceCutoffs[key]){
+      d.balanceCutoffs[key]={through:v.through,reason:"Saldo histórico conciliado y liquidado antes del inicio del periodo indicado.",verifiedAt:"2026-09-25T00:00:00.000Z"};
+      changed=true;
+    }
+  });
+  return changed;
 }
 function load(){
-  try{const saved=localStorage.getItem(STORE);if(saved)return normalizeDB(JSON.parse(saved))}
-  catch(e){console.warn("No se pudo leer la base local",e)}
+  try{
+    const saved=localStorage.getItem(STORE);
+    if(saved){
+      const d=normalizeDB(JSON.parse(saved));
+      applyVerifiedBalanceCutoffs(d);
+      return d;
+    }
+  }catch(e){console.warn("No se pudo leer la base local",e)}
   return blankDB();
 }
 let db=load(),dbVersion=0;
@@ -592,7 +616,11 @@ function sessionPaidAmount(sessionId,excludePaymentId=null){
     return sum;
   },0);
 }
-function sessionOutstanding(s,excludePaymentId=null){return Math.max(0,sessionPay(s)-sessionPaidAmount(s.id,excludePaymentId));}
+function sessionOutstanding(s,excludePaymentId=null){
+  const cutoff=db.balanceCutoffs?.[String(s.employeeId)]?.through;
+  if(cutoff&&localDateKey(new Date(s.entrada))<String(cutoff))return 0;
+  return Math.max(0,sessionPay(s)-sessionPaidAmount(s.id,excludePaymentId));
+}
 function employeePaymentSummary(employeeId){
   const sessions=eligibleSessions(employeeId);
   const generated=sessions.reduce((a,s)=>a+sessionPay(s),0);
