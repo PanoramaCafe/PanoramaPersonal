@@ -233,7 +233,7 @@ function blankDB(){return {employees:[],sessions:[],payments:[],approvals:{},wee
 function normalizeDB(data){
   const d=(data&&typeof data==="object")?data:{};
   const obj=x=>(x&&typeof x==="object"&&!Array.isArray(x))?x:{};
-  return {...blankDB(),...d,employees:Array.isArray(d.employees)?d.employees:[],sessions:Array.isArray(d.sessions)?d.sessions:[],payments:Array.isArray(d.payments)?d.payments:[],approvals:obj(d.approvals),weekFinalizations:obj(d.weekFinalizations),payrollPeriods:obj(d.payrollPeriods),balanceCutoffs:obj(d.balanceCutoffs),adminPin:/^\d{4}$/.test(String(d.adminPin||""))?String(d.adminPin):"1234"};
+  const out={...blankDB(),...d,employees:Array.isArray(d.employees)?d.employees:[],sessions:Array.isArray(d.sessions)?d.sessions:[],payments:Array.isArray(d.payments)?d.payments:[],approvals:obj(d.approvals),weekFinalizations:obj(d.weekFinalizations),payrollPeriods:obj(d.payrollPeriods),balanceCutoffs:obj(d.balanceCutoffs),adminPin:/^\d{4}$/.test(String(d.adminPin||""))?String(d.adminPin):"1234"};applyVerifiedBalanceCutoffs(out);return out;
 }
 function applyVerifiedBalanceCutoffs(d){
   d.balanceCutoffs=d.balanceCutoffs||{};
@@ -257,9 +257,7 @@ function load(){
   try{
     const saved=localStorage.getItem(STORE);
     if(saved){
-      const d=normalizeDB(JSON.parse(saved));
-      applyVerifiedBalanceCutoffs(d);
-      return d;
+      return normalizeDB(JSON.parse(saved));
     }
   }catch(e){console.warn("No se pudo leer la base local",e)}
   return blankDB();
