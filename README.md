@@ -1,4 +1,4 @@
-# Panorama Personal V1.19
+# Panorama Personal V1.27
 
 App web/PWA para reloj checador, asistencia, nómina y pagos de Panorama Café.
 
@@ -11,6 +11,13 @@ App web/PWA para reloj checador, asistencia, nómina y pagos de Panorama Café.
 - `service-worker.js`, `manifest.json`, `icons/` — PWA y funcionamiento offline.
 - `rescate.html` — página de solo lectura para recuperar copias locales.
 - `docs/` — auditorías y plan de seguridad.
+
+## Periodo de nómina cerrado (V1.27)
+Una semana con "✓ Revisión guardada" congela el monto de cada jornada. Editarla o borrarla
+después no cambia esa nómina: se guarda un "ajuste pendiente" que el administrador aplica o
+descarta desde Administración → Revisión de nómina. "🔓 Reabrir y recalcular esta semana"
+reconstruye la revisión completa con las jornadas actuales. El corte de saldo por trabajador
+("🧮 Corte de saldo", en Administración → Trabajadores) es editable — ya no vive en el código.
 
 ## Reglas de sincronización
 - Una sola copia de datos en memoria; el sync reemplaza ese mismo `db`.

@@ -93,7 +93,7 @@ tfoot td{font-weight:900}
   <meta name="apple-mobile-web-app-capable" content="yes">
   <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
   <meta name="apple-mobile-web-app-title" content="Panorama Personal">
-<!-- PANORAMA PERSONAL · V1.25 PWA -->
+<!-- PANORAMA PERSONAL · V1.28 PWA -->
 </head>
 <body><div class="app">
 <header class="header">
@@ -173,12 +173,14 @@ tfoot td{font-weight:900}
   <div class="card">
     <h2 style="margin-top:0">📊 Revisión de nómina</h2>
     <div id="payrollAlerts"></div>
+    <div id="payrollAdjustments"></div>
     <div class="weeknav">
       <button onclick="changeWeek(-1)">← Semana anterior</button>
       <div class="wk" id="weekLabel"></div>
       <button onclick="changeWeek(1)">Semana siguiente →</button>
     </div>
     <table id="payrollTable"></table>
+    <div id="payrollReopenBox"></div>
     <div class="actions"><button onclick="exportWeekCSV()">📊 Exportar revisión (CSV)</button><button class="primary" onclick="finalizeCurrentWeek()">✓ Guardar revisión</button></div><div class="muted" style="margin-top:8px">Esta revisión solo calcula y guarda una fotografía del periodo. No marca horas como pagadas ni modifica saldos.</div>
     <div class="notice">🟢 Hasta 10 h: normal. 🟡 Más de 10 h: sospechosa. 🔴 Más de 12 h o sin salida: revisión obligatoria. Las sesiones pendientes no se contabilizan hasta corregirlas.</div>
   </div>
@@ -217,7 +219,7 @@ tfoot td{font-weight:900}
 
 <div id="modal" class="modal hidden"><div class="modalbox" id="modalBox"></div></div>
 <div id="toast"></div>
-<footer class="muted" style="text-align:center;padding:18px;font-size:12px">Panorama Café · Personal V1.26 · Sincronización protegida</footer>
+<footer class="muted" style="text-align:center;padding:18px;font-size:12px">Panorama Café · Personal V1.28 · Sincronización protegida</footer>
 </div>
 
 <script>
@@ -233,23 +235,45 @@ function blankDB(){return {employees:[],sessions:[],payments:[],approvals:{},wee
 function normalizeDB(data){
   const d=(data&&typeof data==="object")?data:{};
   const obj=x=>(x&&typeof x==="object"&&!Array.isArray(x))?x:{};
-  const out={...blankDB(),...d,employees:Array.isArray(d.employees)?d.employees:[],sessions:Array.isArray(d.sessions)?d.sessions:[],payments:Array.isArray(d.payments)?d.payments:[],approvals:obj(d.approvals),weekFinalizations:obj(d.weekFinalizations),payrollPeriods:obj(d.payrollPeriods),balanceCutoffs:obj(d.balanceCutoffs),adminPin:/^\d{4}$/.test(String(d.adminPin||""))?String(d.adminPin):"1234"};applyVerifiedBalanceCutoffs(out);return out;
+  const out={...blankDB(),...d,employees:Array.isArray(d.employees)?d.employees:[],sessions:Array.isArray(d.sessions)?d.sessions:[],payments:Array.isArray(d.payments)?d.payments:[],approvals:obj(d.approvals),weekFinalizations:obj(d.weekFinalizations),payrollPeriods:obj(d.payrollPeriods),balanceCutoffs:obj(d.balanceCutoffs),adminPin:/^\d{4}$/.test(String(d.adminPin||""))?String(d.adminPin):"1234"};migrateLegacyBalanceCutoffs(out);backfillPeriodSessionSnapshots(out);return out;
 }
-function applyVerifiedBalanceCutoffs(d){
+/* Migración de una sola vez: el corte de Edwin/Andrea vivía fijo en el código (V1.26).
+   Se copia a datos editables (db.balanceCutoffs) y se marca migrado para no repetirse;
+   desde Administración se puede editar o quitar con "🧮 Corte de saldo". */
+function migrateLegacyBalanceCutoffs(d){
+  if(d._migratedHardcodedCutoffs)return false;
   d.balanceCutoffs=d.balanceCutoffs||{};
-  const verified=[
+  const legacy=[
     {id:"2530dcff-ca33-45be-a48c-f530c789bd09",name:"Edwin",through:"2026-09-14"},
     {id:"67d7fc5e-d77c-4023-ae11-78caeb7723cb",name:"Andrea",through:"2026-09-21"}
   ];
-  let changed=false;
-  verified.forEach(v=>{
+  legacy.forEach(v=>{
     const emp=d.employees.find(e=>e.id===v.id||String(e.name||"").trim().toLowerCase()===v.name.toLowerCase());
     if(!emp)return;
     const key=String(emp.id);
-    if(!d.balanceCutoffs[key]){
-      d.balanceCutoffs[key]={through:v.through,reason:"Saldo histórico conciliado y liquidado antes del inicio del periodo indicado.",verifiedAt:"2026-09-25T00:00:00.000Z"};
-      changed=true;
-    }
+    if(!d.balanceCutoffs[key])d.balanceCutoffs[key]={through:v.through,reason:"Migrado del corte fijo que antes vivía en el código (V1.26).",verifiedAt:"2026-09-25T00:00:00.000Z"};
+  });
+  d._migratedHardcodedCutoffs=true;
+  return true;
+}
+/* Periodos de nómina guardados por versiones anteriores no tenían el detalle por jornada
+   (solo el total por trabajador). Se completa UNA vez con los valores actuales de esas
+   jornadas, para que de aquí en adelante ese periodo quede realmente congelado.
+   Aviso: si alguna jornada de un periodo ya revisado se había editado ANTES de instalar
+   esta versión, se congela con el valor editado (no el original) — revísalo con
+   "🔓 Reabrir y recalcular esta semana" si hace falta. */
+function backfillPeriodSessionSnapshots(d){
+  let changed=false;
+  Object.values(d.payrollPeriods||{}).forEach(per=>{
+    if(!per||!per.snapshot||per.snapshot.sessions)return;
+    const map={};
+    (per.snapshot.employees||[]).forEach(emp=>{
+      (emp.sessionIds||[]).forEach(sid=>{
+        const s=d.sessions.find(x=>x.id===sid);
+        if(s)map[sid]={hours:hoursOf(s),amount:sessionPay(s)};
+      });
+    });
+    per.snapshot.sessions=map;changed=true;
   });
   return changed;
 }
@@ -416,8 +440,15 @@ function openEmployeeForm(id){
   <label>Tarifa por hora (MXN)</label><input id="empRate" type="number" min="0" step="0.5" value="${e.rate??""}">
   <label>PIN (4 dígitos, para marcar entrada/salida)</label><input id="empPin" maxlength="4" inputmode="numeric" value="${esc(e.pin||"")}">
   ${id?`<div class="rate-note"><b>Tarifas históricas protegidas.</b> Las jornadas guardan la tarifa que tenían al registrarse. Si este cambio debe aplicarse también a jornadas ya registradas, usa la opción de abajo.</div>
-  <button type="button" onclick="openRateAdjustment('${id}')">💰 Aplicar tarifa a jornadas desde una fecha</button>`:""}
+  <button type="button" onclick="applyEmployeeRateThenAdjust('${id}')">💰 Aplicar tarifa a jornadas desde una fecha</button>`:""}
   <div class="actions"><button onclick="closeModal()">Cancelar</button>${id?`<button class="danger" onclick="deactivateEmployee('${id}')">Desactivar</button>`:""}<button class="primary" onclick="saveEmployee('${id||""}')">Guardar</button></div>`);
+}
+function applyEmployeeRateThenAdjust(employeeId){
+  const val=Number(document.getElementById("empRate")?.value);
+  if(!Number.isFinite(val)||val<=0){alert("Escribe primero la nueva tarifa por hora (arriba) antes de continuar.");return}
+  const e=db.employees.find(x=>x.id===employeeId);if(!e)return;
+  e.rate=val;save();
+  openRateAdjustment(employeeId);
 }
 function openRateAdjustment(employeeId){
   const e=db.employees.find(x=>x.id===employeeId);if(!e)return;
@@ -436,7 +467,7 @@ function applyRateAdjustment(employeeId){
   const sessions=db.sessions.filter(s=>s.employeeId===employeeId&&localDateKey(new Date(s.entrada))>=date);
   if(!sessions.length){alert("No hay jornadas de este trabajador desde esa fecha.");return}
   if(!confirm(`¿Aplicar ${Number(e.rate).toFixed(2)}/h a ${sessions.length} jornada(s) desde el ${date}? Las jornadas anteriores no cambiarán.`))return;
-  sessions.forEach(s=>{s.rateAtEntry=Number(e.rate)});
+  sessions.forEach(s=>{const before={...s};s.rateAtEntry=Number(e.rate);recordAdjustmentIfNeeded(before,s)});
   closeModal();save();showToast(`Tarifa aplicada a ${sessions.length} jornada(s) desde ${date}`);
 }
 function saveEmployee(id){
@@ -462,7 +493,7 @@ function renderEmployeeList(){
   if(!db.employees.length){box.innerHTML="<div class='empty'>No hay trabajadores registrados.</div>";return}
   box.innerHTML=db.employees.map(e=>{
     const through=lastPaidThrough(e.id);
-    return `<div class="item"><b>${esc(e.name)}</b> ${e.active?"":"<span class='muted'>(inactivo)</span>"}<br><span class="muted">$${e.rate}/hora · PIN ···· · Pagado hasta: ${through?esc(through):"sin pagos registrados"}</span><div class="actions"><button onclick="openEmployeeForm('${e.id}')">✏️ Editar</button>${e.active?"":`<button class="ok" onclick="reactivateEmployee('${e.id}')">↩ Reactivar</button>`}</div></div>`;
+    return `<div class="item"><b>${esc(e.name)}</b> ${e.active?"":"<span class='muted'>(inactivo)</span>"}<br><span class="muted">$${e.rate}/hora · PIN ···· · Pagado hasta: ${through?esc(through):"sin pagos registrados"}</span><div class="actions"><button onclick="openEmployeeForm('${e.id}')">✏️ Editar</button><button onclick="openBalanceCutoffForm('${e.id}')">🧮 Corte de saldo</button>${e.active?"":`<button class="ok" onclick="reactivateEmployee('${e.id}')">↩ Reactivar</button>`}</div></div>`;
   }).join("");
 }
 
@@ -529,13 +560,104 @@ function weekPendingSessions(){
 function payrollPeriodKey(start){return localDateKey(start)}
 function buildPayrollSnapshot(start,end){
   const sessions=sessionsInRange(start,end).filter(sessionCountsForPayroll);
+  const sessionMap={};
+  sessions.forEach(s=>{sessionMap[s.id]={hours:hoursOf(s),amount:sessionPay(s)}});
   const employees=db.employees.map(e=>{
     const list=sessions.filter(s=>s.employeeId===e.id);
     const hours=list.reduce((a,s)=>a+hoursOf(s),0);
     const amount=list.reduce((a,s)=>a+sessionPay(s),0);
     return {employeeId:e.id,name:e.name,hours,amount,sessionIds:list.map(s=>s.id)};
   }).filter(x=>x.hours>0);
-  return {employees,totalHours:employees.reduce((a,x)=>a+x.hours,0),totalAmount:employees.reduce((a,x)=>a+x.amount,0)};
+  return {employees,sessions:sessionMap,totalHours:employees.reduce((a,x)=>a+x.hours,0),totalAmount:employees.reduce((a,x)=>a+x.amount,0)};
+}
+/* ---------- Periodo cerrado: la revisión guardada es la fuente del saldo ---------- */
+function findReviewedPeriodForSession(s){
+  const k=localDateKey(new Date(s.entrada));
+  for(const key in (db.payrollPeriods||{})){
+    const per=db.payrollPeriods[key];
+    if(per&&per.snapshot&&per.snapshot.sessions&&per.snapshot.sessions[s.id]&&k>=per.start&&k<=per.end)return {key,period:per};
+  }
+  return null;
+}
+function sessionPayForBalance(s){
+  const found=findReviewedPeriodForSession(s);
+  if(found){const frozen=found.period.snapshot.sessions[s.id];if(frozen)return frozen.amount}
+  return sessionPay(s);
+}
+function recordAdjustmentIfNeeded(before,after){
+  if(!before)return;
+  const found=findReviewedPeriodForSession(before);
+  if(!found)return;
+  const frozen=found.period.snapshot.sessions[before.id];
+  if(!frozen)return;
+  const afterHours=hoursOf(after),afterAmount=sessionPay(after);
+  if(Math.abs(afterAmount-frozen.amount)<0.005&&Math.abs(afterHours-frozen.hours)<0.005)return;
+  found.period.adjustments=found.period.adjustments||{};
+  found.period.adjustments[before.id]={id:before.id,employeeId:before.employeeId,before:{hours:frozen.hours,amount:frozen.amount},after:{hours:afterHours,amount:afterAmount},detectedAt:new Date().toISOString(),status:"pending"};
+}
+function allPendingAdjustments(){
+  const out=[];
+  Object.entries(db.payrollPeriods||{}).forEach(([key,per])=>{
+    Object.values(per.adjustments||{}).forEach(a=>{if(a.status==="pending")out.push({...a,periodKey:key,periodStart:per.start,periodEnd:per.end})});
+  });
+  return out;
+}
+function reopenPayrollPeriod(key){
+  const per=db.payrollPeriods?.[key];if(!per)return;
+  if(!confirm(`Vas a RECALCULAR la revisión del ${fmtDateShort(new Date(per.start+"T00:00:00"))} al ${fmtDateShort(new Date(per.end+"T00:00:00"))} usando las jornadas actuales.\n\nLos pagos ya registrados NO cambian.`))return;
+  const start=new Date(per.start+"T00:00:00"),end=new Date(new Date(per.end+"T00:00:00").getTime()+86400000);
+  per.snapshot=buildPayrollSnapshot(start,end);per.reviewedAt=new Date().toISOString();
+  Object.values(per.adjustments||{}).forEach(a=>{if(a.status==="pending"){a.status="resolved-by-reopen";a.resolvedAt=new Date().toISOString()}});
+  save();showToast("Periodo recalculado con las jornadas actuales.");
+}
+function applyAdjustment(periodKey,sessionId){
+  const per=db.payrollPeriods?.[periodKey],adj=per?.adjustments?.[sessionId];if(!adj)return;
+  per.snapshot.sessions[sessionId]={hours:adj.after.hours,amount:adj.after.amount};
+  const emp=per.snapshot.employees.find(e=>e.employeeId===adj.employeeId);
+  if(emp){
+    const list=emp.sessionIds.map(sid=>per.snapshot.sessions[sid]).filter(Boolean);
+    emp.hours=list.reduce((a,x)=>a+x.hours,0);emp.amount=list.reduce((a,x)=>a+x.amount,0);
+  }
+  per.snapshot.totalHours=per.snapshot.employees.reduce((a,e)=>a+e.hours,0);
+  per.snapshot.totalAmount=per.snapshot.employees.reduce((a,e)=>a+e.amount,0);
+  adj.status="applied";adj.appliedAt=new Date().toISOString();
+  save();showToast("Ajuste aplicado a la nómina revisada.");
+}
+function dismissAdjustment(periodKey,sessionId){
+  const adj=db.payrollPeriods?.[periodKey]?.adjustments?.[sessionId];if(!adj)return;
+  adj.status="dismissed";adj.dismissedAt=new Date().toISOString();
+  save();showToast("Ajuste descartado. La nómina revisada no cambia.");
+}
+function openAdjustmentsModal(){
+  const list=allPendingAdjustments();
+  const rows=list.map(a=>{
+    const emp=db.employees.find(e=>e.id===a.employeeId);
+    const dH=a.after.hours-a.before.hours,dA=a.after.amount-a.before.amount;
+    return `<div class="item"><b>${esc(emp?emp.name:"?")}</b> · semana ${a.periodStart} a ${a.periodEnd}${a.deleted?" · jornada eliminada":""}<br>
+    <span class="muted">Congelado: ${a.before.hours.toFixed(1)} h / $${a.before.amount.toFixed(2)} → Ahora: ${a.after.hours.toFixed(1)} h / $${a.after.amount.toFixed(2)} (Δ ${dH>=0?"+":""}${dH.toFixed(1)} h, ${dA>=0?"+":""}$${dA.toFixed(2)})</span>
+    <div class="actions"><button onclick="dismissAdjustment('${a.periodKey}','${a.id}');openAdjustmentsModal()">Descartar (mantener lo revisado)</button><button class="primary" onclick="applyAdjustment('${a.periodKey}','${a.id}');openAdjustmentsModal()">Aplicar a la nómina revisada</button></div></div>`;
+  }).join("");
+  openModal(`<div class="modalhead"><div><h2 style="margin:0">Ajustes de periodos cerrados</h2><div class="muted">Ninguno se aplica solo. Tú decides.</div></div><button class="close" onclick="closeModal()">✕</button></div>${rows||"<div class='empty'>No hay ajustes pendientes.</div>"}<div class="actions"><button onclick="closeModal()">Cerrar</button></div>`);
+}
+function openBalanceCutoffForm(employeeId){
+  const emp=db.employees.find(e=>e.id===employeeId);if(!emp)return;
+  const cur=db.balanceCutoffs?.[employeeId];
+  openModal(`<div class="modalhead"><div><h2 style="margin:0">🧮 Corte de saldo — ${esc(emp.name)}</h2><div class="muted">Las jornadas ANTES de esta fecha ya no generan pendiente (se consideran liquidadas).</div></div><button class="close" onclick="closeModal()">✕</button></div>
+  <label>Liquidado hasta (fecha, inclusive)</label><input id="cutThrough" type="date" value="${cur?.through||""}">
+  <label>Motivo / nota</label><input id="cutReason" value="${esc(cur?.reason||"")}">
+  <div class="actions"><button onclick="closeModal()">Cancelar</button>${cur?`<button class="danger" onclick="clearBalanceCutoff('${employeeId}')">Quitar corte</button>`:""}<button class="primary" onclick="saveBalanceCutoff('${employeeId}')">Guardar</button></div>`);
+}
+function saveBalanceCutoff(employeeId){
+  const through=document.getElementById("cutThrough").value,reason=document.getElementById("cutReason").value.trim();
+  if(!through){alert("Elige una fecha.");return}
+  if(!confirm(`Se considerará liquidado todo lo generado hasta el ${through} (inclusive) para este trabajador. ¿Confirmas?`))return;
+  db.balanceCutoffs=db.balanceCutoffs||{};
+  db.balanceCutoffs[employeeId]={through,reason:reason||"Corte manual",verifiedAt:new Date().toISOString()};
+  closeModal();save();showToast("Corte de saldo guardado");
+}
+function clearBalanceCutoff(employeeId){
+  if(!confirm("¿Quitar el corte de saldo? Las jornadas anteriores volverán a contarse como pendientes si no tienen pago registrado."))return;
+  delete db.balanceCutoffs[employeeId];closeModal();save();showToast("Corte de saldo eliminado");
 }
 function finalizeCurrentWeek(){
   const pending=weekPendingSessions();
@@ -560,12 +682,25 @@ function renderPayroll(){
   if(box) box.innerHTML=pending.length?`<div class="notice warning"><b>⚠️ ${pending.length} registro(s) requieren revisión.</b><br>Las sesiones sin salida o con más de 10 horas no se contabilizan hasta ser corregidas o aprobadas.</div>`:"";
   const weekKey=payrollPeriodKey(start),period=db.payrollPeriods?.[weekKey];
   document.getElementById("weekLabel").textContent=`${fmtDateShort(start)} – ${fmtDateShort(new Date(end-1))}${period?" · ✓ Revisión guardada":""}`;
-  const rows=db.employees.map(e=>{
-    const list=inRange.filter(x=>x.employeeId===e.id),hours=list.reduce((a,x)=>a+(sessionCountsForPayroll(x)?hoursOf(x):0),0),pay=list.reduce((a,x)=>a+(sessionCountsForPayroll(x)?sessionPay(x):0),0);
-    return {employeeId:e.id,name:e.name,hours,amount:pay,pending:list.some(x=>isPendingSession(x)&&!sessionIsApproved(x))};
-  }).filter(r=>r.hours>0||db.employees.length);
-  const total=rows.reduce((a,r)=>a+(r.amount||0),0);
+  let rows,total;
+  if(period){
+    rows=period.snapshot.employees.map(e=>({name:e.name,hours:e.hours,amount:e.amount,pending:false}));
+    total=period.snapshot.totalAmount;
+  } else {
+    rows=db.employees.map(e=>{
+      const list=inRange.filter(x=>x.employeeId===e.id),hours=list.reduce((a,x)=>a+(sessionCountsForPayroll(x)?hoursOf(x):0),0),pay=list.reduce((a,x)=>a+(sessionCountsForPayroll(x)?sessionPay(x):0),0);
+      return {name:e.name,hours,amount:pay,pending:list.some(x=>isPendingSession(x)&&!sessionIsApproved(x))};
+    }).filter(r=>r.hours>0||db.employees.length);
+    total=rows.reduce((a,r)=>a+(r.amount||0),0);
+  }
   document.getElementById("payrollTable").innerHTML=`<thead><tr><th>Trabajador</th><th>Horas aprobadas</th><th>Tarifa prom.</th><th>Pago</th></tr></thead><tbody>${rows.length?rows.map(r=>{const rate=r.hours>0?r.amount/r.hours:0;return `<tr><td>${esc(r.name)}</td><td>${r.hours.toFixed(1)}${r.pending?" ⚠️":""}</td><td>$${rate.toFixed(2)}/h</td><td>$${r.amount.toFixed(2)}</td></tr>`}).join(""):"<tr><td colspan='4' class='empty'>Sin trabajadores</td></tr>"}</tbody><tfoot><tr><td colspan="3">Total semana</td><td>$${total.toFixed(2)}</td></tr></tfoot>`;
+  const adjBox=document.getElementById("payrollAdjustments");
+  if(adjBox){
+    const list=allPendingAdjustments();
+    adjBox.innerHTML=list.length?`<div class="notice warning" style="cursor:pointer" onclick="openAdjustmentsModal()"><b>⚠️ ${list.length} ajuste(s) pendiente(s) en periodos ya revisados.</b><br>Alguien editó o eliminó una jornada que ya estaba en una nómina cerrada. Toca aquí para revisarlos.</div>`:"";
+  }
+  const reopenBox=document.getElementById("payrollReopenBox");
+  if(reopenBox)reopenBox.innerHTML=period?`<button onclick="reopenPayrollPeriod('${weekKey}')">🔓 Reabrir y recalcular esta semana</button>`:"";
 }
 
 /* ---------- Dashboard de nómina y gráfica ---------- */
@@ -617,11 +752,11 @@ function sessionPaidAmount(sessionId,excludePaymentId=null){
 function sessionOutstanding(s,excludePaymentId=null){
   const cutoff=db.balanceCutoffs?.[String(s.employeeId)]?.through;
   if(cutoff&&localDateKey(new Date(s.entrada))<String(cutoff))return 0;
-  return Math.max(0,sessionPay(s)-sessionPaidAmount(s.id,excludePaymentId));
+  return Math.max(0,sessionPayForBalance(s)-sessionPaidAmount(s.id,excludePaymentId));
 }
 function employeePaymentSummary(employeeId){
   const sessions=eligibleSessions(employeeId);
-  const generated=sessions.reduce((a,s)=>a+sessionPay(s),0);
+  const generated=sessions.reduce((a,s)=>a+sessionPayForBalance(s),0);
   const pending=sessions.reduce((a,s)=>a+sessionOutstanding(s),0);
   const rows=db.payments.filter(p=>p.employeeId===employeeId);
   const payroll=rows.reduce((a,p)=>a+paymentParts(p).payroll,0);
@@ -827,15 +962,28 @@ function saveSession(id){
   if(!salida&&otherOpen){alert("Este trabajador ya tiene una jornada abierta. Corrígela antes de crear otra.");return}
   if(id){
     const existing=db.sessions.find(x=>x.id===id);
+    const before={...existing};
     const rateAtEntry=(existing.employeeId===employeeId && Number(existing.rateAtEntry)>0)?Number(existing.rateAtEntry):(Number(db.employees.find(e=>e.id===employeeId)?.rate)||0);
     Object.assign(existing,{employeeId,entrada,salida,rateAtEntry});
+    recordAdjustmentIfNeeded(before,existing);
   } else {
     const rateAtEntry=Number(db.employees.find(e=>e.id===employeeId)?.rate)||0;
     db.sessions.unshift({id:crypto.randomUUID(),employeeId,entrada,salida,rateAtEntry});
   }
   closeModal();save();
 }
-function deleteSession(id){if(!confirm("¿Eliminar este registro?"))return;db.sessions=db.sessions.filter(x=>x.id!==id);closeModal();save()}
+function deleteSession(id){
+  const s=db.sessions.find(x=>x.id===id);
+  if(!s){closeModal();return}
+  const found=findReviewedPeriodForSession(s);
+  if(found){
+    if(!confirm(`Esta jornada pertenece a la nómina ya revisada del ${found.period.start} al ${found.period.end}.\n\nSi la eliminas, esa revisión NO cambia sola: se guardará un ajuste pendiente para que lo decidas en Administración. ¿Eliminar de todas formas?`))return;
+    const frozen=found.period.snapshot.sessions[id];
+    found.period.adjustments=found.period.adjustments||{};
+    found.period.adjustments[id]={id,employeeId:s.employeeId,before:{hours:frozen.hours,amount:frozen.amount},after:{hours:0,amount:0},detectedAt:new Date().toISOString(),status:"pending",deleted:true};
+  } else if(!confirm("¿Eliminar este registro?"))return;
+  db.sessions=db.sessions.filter(x=>x.id!==id);closeModal();save();
+}
 function renderSessionList(){
   const {start,end}=currentWeekRange();
   const list=sessionsInRange(start,end);
