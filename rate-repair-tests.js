@@ -43,5 +43,22 @@ t('3) la herramienta de reparación corrige el dato crudo de agosto de vuelta a 
 t('la jornada de septiembre (real, correcta) no se tocó, sigue en 35',run(A,'db.sessions[1].rateAtEntry')===35);
 t('la nómina de agosto sigue igual de correcta después de la reparación',Math.abs(run(A,'db.payrollPeriods["2026-08-17"].snapshot.totalAmount')-frozenAug)<0.01);
 
-console.log(fails?'\nFALLOS: '+fails:'\nTODAS LAS PRUEBAS DE REPARACIÓN PASARON');
+// --- Bug reportado: al corregir de vuelta a lo revisado, el aviso pendiente debía cerrarse solo ---
+const B=ctx();
+run(B,'db.employees.push({id:"andrea",name:"Andrea",rate:30,pin:"1111",active:true})');
+run(B,'db.sessions.push({id:"aug1",employeeId:"andrea",entrada:"2026-08-17T09:00:00.000Z",salida:"2026-08-17T13:00:00.000Z",rateAtEntry:30})');
+run(B,'db.payrollPeriods["2026-08-17"]={id:"2026-08-17",start:"2026-08-17",end:"2026-08-23",status:"reviewed",reviewedAt:new Date().toISOString(),snapshot:buildPayrollSnapshot(new Date("2026-08-17T00:00:00"),new Date("2026-08-24T00:00:00"))}');
+// error: se aplica 35 por accidente
+run(B,'db.employees.find(e=>e.id==="andrea").rate=35');
+run(B,'document.getElementById("rateEffectiveDate").value="2026-01-01"');
+run(B,'applyRateAdjustment("andrea")');
+t('4) el error genera 1 ajuste pendiente',run(B,'allPendingAdjustments().length')===1);
+// reparación: vuelve a 30 en ese rango -> el aviso debe cerrarse SOLO, sin tocarlo a mano
+run(B,'document.getElementById("repairRate").value="30";document.getElementById("repairFrom").value="2026-01-01";document.getElementById("repairTo").value="2026-09-20"');
+run(B,'applyRateRepair("andrea")');
+t('la reparación deja la jornada de vuelta en 30',run(B,'db.sessions[0].rateAtEntry')===30);
+t('5) el aviso pendiente se cierra SOLO al corregir (antes se quedaba pegado)',run(B,'allPendingAdjustments().length')===0);
+t('el registro queda con estado "resolved-matches-frozen" para trazabilidad, no desaparece del historial',run(B,'db.payrollPeriods["2026-08-17"].adjustments["aug1"].status')==='resolved-matches-frozen');
+
+console.log(fails?'\nFALLOS: '+fails:'\nTODAS LAS PRUEBAS PASARON (incluye el cierre automático del aviso)');
 process.exit(fails?1:0);

@@ -93,7 +93,7 @@ tfoot td{font-weight:900}
   <meta name="apple-mobile-web-app-capable" content="yes">
   <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
   <meta name="apple-mobile-web-app-title" content="Panorama Personal">
-<!-- PANORAMA PERSONAL · V1.29 PWA -->
+<!-- PANORAMA PERSONAL · V1.30 PWA -->
 </head>
 <body><div class="app">
 <header class="header">
@@ -219,7 +219,7 @@ tfoot td{font-weight:900}
 
 <div id="modal" class="modal hidden"><div class="modalbox" id="modalBox"></div></div>
 <div id="toast"></div>
-<footer class="muted" style="text-align:center;padding:18px;font-size:12px">Panorama Café · Personal V1.29 · Sincronización protegida</footer>
+<footer class="muted" style="text-align:center;padding:18px;font-size:12px">Panorama Café · Personal V1.30 · Sincronización protegida</footer>
 </div>
 
 <script>
@@ -611,7 +611,15 @@ function recordAdjustmentIfNeeded(before,after){
   const frozen=found.period.snapshot.sessions[before.id];
   if(!frozen)return;
   const afterHours=hoursOf(after),afterAmount=sessionPay(after);
-  if(Math.abs(afterAmount-frozen.amount)<0.005&&Math.abs(afterHours-frozen.hours)<0.005)return;
+  const matches=Math.abs(afterAmount-frozen.amount)<0.005&&Math.abs(afterHours-frozen.hours)<0.005;
+  const existing=found.period.adjustments?.[before.id];
+  if(matches){
+    /* Una corrección posterior puede devolver la jornada a lo ya revisado (ej. reparar una
+       tarifa aplicada por error). Si había un aviso pendiente de antes, se cierra solo: ya no
+       hay ninguna diferencia que decidir. */
+    if(existing&&existing.status==="pending"){existing.status="resolved-matches-frozen";existing.resolvedAt=new Date().toISOString()}
+    return;
+  }
   found.period.adjustments=found.period.adjustments||{};
   found.period.adjustments[before.id]={id:before.id,employeeId:before.employeeId,before:{hours:frozen.hours,amount:frozen.amount},after:{hours:afterHours,amount:afterAmount},detectedAt:new Date().toISOString(),status:"pending"};
 }
