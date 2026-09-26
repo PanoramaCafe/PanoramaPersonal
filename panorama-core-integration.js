@@ -19,6 +19,22 @@ async function get(){const r=await fetch(C.url+'/rest/v1/panorama_personal_state
 async function put(d){const r=await fetch(C.url+'/rest/v1/panorama_personal_state?on_conflict=id',{method:'POST',headers:await hdr({Prefer:'resolution=merge-duplicates,return=representation'}),body:JSON.stringify({id:ROW,data:d})});authFail=r.status===401||r.status===403;if(!r.ok)throw Error(await r.text());return(await r.json())[0]||null}
 const ver=()=>typeof window.__panoramaVersion==='function'?window.__panoramaVersion():0,bulkOK=()=>localStorage.getItem(BULK)==='1';
 function drop(r,m){if(!r||!m)return null;for(const k of['employees','sessions','payments']){const a=(r[k]||[]).length,b=(m[k]||[]).length;if(a>=4&&b<a*.5)return k+' '+a+' -> '+b}return null}
-async function sync(){if(busy||applying||!navigator.onLine)return false;busy=true;try{const v0=ver(),l=locals(),b=rd(B),row=await get(),r=row?.data||null,m=merge(l,r,b);if(!m)return true;const bad=drop(r,m);if(bad&&!bulkOK()){halted=true;console.warn('Sync detenida: el cambio borraría más de la mitad de un tipo de datos ('+bad+'). El remoto no se tocó.');return false}halted=false;const change=!r||!eq(m,r);if(change){const saved=await put({...m,_sync:{...(m._sync||{}),updatedAt:new Date().toISOString()}}),d=saved?.data||m;if(ver()!==v0)return false;apply(d)}else if(!eq(m,l)){if(ver()!==v0)return false;apply(m)}for(const k of Q)localStorage.removeItem(k);localStorage.removeItem(BULK);wr(B,rd(S)||m);refresh();return true}catch(e){console.warn('sync pending',e);refresh();return false}finally{busy=false;refresh()}}
+function suspiciousSession(s,r){if(!s?.entrada)return null;const a=new Date(s.entrada),b=s.salida?new Date(s.salida):new Date();if(!Number.isFinite(a.getTime())||!Number.isFinite(b.getTime()))return null;const hours=(b-a)/3600000;if(hours>24)return 'Jornada de '+hours.toFixed(1)+' h';if(!s.salida&&(Date.now()-a.getTime())>24*3600000)return 'Jornada abierta de más de 24 h';return null}
+function changedSuspiciousSessions(m,r){const rm=new Map((r?.sessions||[]).map(s=>[String(s.id),s]));for(const s of m?.sessions||[]){const before=rm.get(String(s.id));if(!before||!eq(before,s)){const reason=suspiciousSession(s,r);if(reason)return {id:s.id,reason,session:s}}}return null}
+async function sync(){if(busy||applying||!navigator.onLine)return false;busy=true;try{const v0=ver(),l=locals(),b=rd(B),row=await get(),r=row?.data||null;
+if(r&&!b){
+  if(l&&!eq(l,r))recover(l);
+  apply(r);
+  wr(B,cp(r));
+  for(const k of Q)localStorage.removeItem(k);
+  localStorage.removeItem(BULK);
+  halted=false;
+  msg('● Base de nube cargada','ok');
+  return true;
+}
+const m=merge(l,r,b);if(!m)return true;
+const bad=drop(r,m);if(bad&&!bulkOK()){halted=true;console.warn('Sync detenida: el cambio borraría más de la mitad de un tipo de datos ('+bad+'). El remoto no se tocó.');return false}
+const suspicious=changedSuspiciousSessions(m,r);if(suspicious&&!bulkOK()){halted=true;console.warn('Sync detenida por jornada sospechosa:',suspicious);msg('● Sync detenida: jornada sospechosa','wait');return false}
+halted=false;const change=!r||!eq(m,r);if(change){const saved=await put({...m,_sync:{...(m._sync||{}),updatedAt:new Date().toISOString()}}),d=saved?.data||m;if(ver()!==v0)return false;apply(d)}else if(!eq(m,l)){if(ver()!==v0)return false;apply(m)}for(const k of Q)localStorage.removeItem(k);localStorage.removeItem(BULK);wr(B,rd(S)||m);refresh();return true}catch(e){console.warn('sync pending',e);refresh();return false}finally{busy=false;refresh()}}
 layout();new MutationObserver(layout).observe(document.documentElement,{childList:true,subtree:true});addEventListener('online',sync);addEventListener('panorama-auth-change',()=>{authFail=false;refresh();sync()});addEventListener('panorama-local-saved',()=>{clearTimeout(window._pps);window._pps=setTimeout(()=>sync(),700)});addEventListener('offline',refresh);document.addEventListener('visibilitychange',()=>{if(!document.hidden)sync()});window.PanoramaPersonalSync={sync,allowBulk:()=>localStorage.setItem(BULK,'1'),status:()=>({online:navigator.onLine,pending:pend(),recovery:!!rd(R)})};refresh();setInterval(()=>sync(),P);sync();
 })();
